@@ -30,7 +30,7 @@ The bundle is the raw material the reports are built from.
 Clone the repository and open either HTML file in a browser:
 
 ```bash
-git clone <this-repository>
+git clone https://github.com/emerichunter/pgblitzaudit-examples.git
 cd pgblitzaudit-examples
 xdg-open reports/ultimate_report_shopdb.html   # or just double-click it
 ```

@@ -3,7 +3,51 @@
   "generated_at": "2026-10-23T20:44:58Z",
   "pg_version": "PostgreSQL 17.11 (Debian 17.11-1.pgdg13+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit",
   "pg_major": 17,
-  "host": "docker:pba-verify",
-  "databases": ["postgres","shopdb"],
-  "files": [{"name":"catalog_db_postgres.json","size_bytes":8939,"modified":"2026-10-23T20:44:56Z"},{"name":"catalog_db_shopdb.json","size_bytes":35973,"modified":"2026-10-23T20:44:57Z"},{"name":"stat_db_postgres.json","size_bytes":33693,"modified":"2026-10-23T20:44:57Z"},{"name":"stat_db_shopdb.json","size_bytes":146994,"modified":"2026-10-23T20:44:57Z"},{"name":"schema_dump_postgres.sql","size_bytes":724,"modified":"2026-10-23T20:44:58Z"},{"name":"schema_dump_shopdb.sql","size_bytes":9491,"modified":"2026-10-23T20:44:58Z"},{"name":"statistics_dump_postgres.sql","size_bytes":184,"modified":"2026-10-23T20:44:58Z"},{"name":"statistics_dump_shopdb.sql","size_bytes":182,"modified":"2026-10-23T20:44:58Z"}]
+  "host": "docker:pba-demo",
+  "databases": [
+    "postgres",
+    "shopdb"
+  ],
+  "files": [
+    {
+      "name": "catalog_db_postgres.json",
+      "size_bytes": 8939,
+      "modified": "2026-10-23T20:44:56Z"
+    },
+    {
+      "name": "catalog_db_shopdb.json",
+      "size_bytes": 35973,
+      "modified": "2026-10-23T20:44:57Z"
+    },
+    {
+      "name": "stat_db_postgres.json",
+      "size_bytes": 33693,
+      "modified": "2026-10-23T20:44:57Z"
+    },
+    {
+      "name": "stat_db_shopdb.json",
+      "size_bytes": 146994,
+      "modified": "2026-10-23T20:44:57Z"
+    },
+    {
+      "name": "schema_dump_postgres.sql",
+      "size_bytes": 724,
+      "modified": "2026-10-23T20:44:58Z"
+    },
+    {
+      "name": "schema_dump_shopdb.sql",
+      "size_bytes": 9491,
+      "modified": "2026-10-23T20:44:58Z"
+    },
+    {
+      "name": "statistics_dump_postgres.sql",
+      "size_bytes": 184,
+      "modified": "2026-10-23T20:44:58Z"
+    },
+    {
+      "name": "statistics_dump_shopdb.sql",
+      "size_bytes": 182,
+      "modified": "2026-10-23T20:44:58Z"
+    }
+  ]
 }
