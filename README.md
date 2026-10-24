@@ -35,7 +35,9 @@ cd pgblitzaudit-examples
 xdg-open reports/ultimate_report_shopdb.html   # or just double-click it
 ```
 
-The reports are single files: no server, no build step, and no account. Each report loads web fonts from Google Fonts; without a connection it still renders fine with system fonts.
+The reports are single files: no server, no build step, no account, and no network. Every
+stylesheet and script is inline, fonts fall back to the ones your system already has, so a
+report opens identically on an air-gapped machine.
 
 ## What the bundle is
 
