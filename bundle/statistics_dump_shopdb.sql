@@ -1,0 +1,3 @@
+-- pg_dump --statistics-only requires PostgreSQL 18+.
+-- Planner statistics are available in catalog_db_shopdb.json (planner_stats section).
+-- PostgreSQL major version detected: 17

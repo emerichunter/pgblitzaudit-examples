@@ -1,0 +1,3498 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Rapport Performance PostgreSQL  17.11 </title>
+<style>
+  @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap");
+  
+  :root { 
+    --bg: #0f172a; --surface: #1e293b; --primary: #38bdf8; --text: #f8fafc; --text-muted: #94a3b8; --border: #334155; --hover: #0ea5e9; 
+    --h2-bg: rgba(255,255,255,0.02); --h2-border: #38bdf8;
+  }
+  
+  body.light-mode { 
+    --bg: #f8fafc; --surface: #ffffff; --primary: #2563eb; --text: #1e293b; --text-muted: #64748b; --border: #e2e8f0; --hover: #1d4ed8; 
+    --h2-bg: #fff0f0; --h2-border: #c0392b;
+  }
+
+  body { font-family: "Inter", system-ui, -apple-system, sans-serif; margin: 40px auto; max-width: 1400px; background-color: var(--bg); color: var(--text); line-height: 1.6; transition: background-color 0.3s, color 0.3s; }
+  
+  .header-container { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 30px; }
+  h1 { color: var(--text); font-size: 2.5rem; background: linear-gradient(135deg, var(--primary), #818cf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; border-bottom: none; margin: 0; font-weight: 800; letter-spacing: -0.02em; }
+  .pg-version-badge { background: var(--primary); color: #000; padding: 4px 12px; border-radius: 6px; font-weight: 800; font-size: 0.9rem; margin-left: 15px; vertical-align: middle; -webkit-text-fill-color: initial; display: inline-block; }
+  
+  /* Theme Switch */
+  .theme-switch { background: var(--surface); border: 1px solid var(--border); padding: 8px 16px; border-radius: 50px; cursor: pointer; display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 0.85rem; color: var(--text); transition: all 0.3s; }
+  .theme-switch:hover { border-color: var(--primary); box-shadow: 0 0 15px rgba(56,189,248,0.2); }
+  
+  h2 { color: var(--text); margin-top: 60px; font-size: 1.5rem; display: flex; align-items: center; gap: 12px; font-weight: 700; padding: 10px; border-radius: 8px; background: var(--h2-bg); }
+  h2::before { content: ""; display: block; width: 6px; height: 24px; background: var(--h2-border); border-radius: 4px; }
+  body.light-mode h2 { color: #c0392b; }
+  body.light-mode .nav-menu { background: rgba(255, 255, 255, 0.85); }
+  
+  /* Navigation */
+  .nav-menu { position: sticky; top: 20px; z-index: 100; backdrop-filter: blur(12px); background: rgba(30, 41, 59, 0.85); padding: 20px 25px; border-radius: 12px; border: 1px solid var(--border); box-shadow: 0 10px 30px -10px rgba(0,0,0,0.5); display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 40px; }
+  .nav-menu strong { color: var(--text-muted); margin-right: 10px; font-weight: 600; }
+  .nav-menu a { text-decoration: none; color: var(--text); font-weight: 500; padding: 8px 16px; border-radius: 8px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05); transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); font-size: 0.9em; }
+  .nav-menu a:hover { background: var(--primary); color: #fff; border-color: var(--primary); transform: translateY(-2px); box-shadow: 0 4px 12px rgba(56,189,248,0.3); }
+
+  /* Tableaux */
+  table { width: 100%; border-collapse: separate; border-spacing: 0; margin-top: 20px; background: var(--surface); border-radius: 12px; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.5); font-size: 0.95em; table-layout: fixed; border: 1px solid var(--border); }
+  th { background: rgba(255,255,255,0.02); color: var(--text-muted); padding: 16px; text-align: left; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; font-size: 0.75rem; border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 10; backdrop-filter: blur(8px); }
+  body.light-mode th { background: #34495e; color: #fff; }
+  td { padding: 16px; border-bottom: 1px solid var(--border); vertical-align: top; font-family: "JetBrains Mono", "Fira Code", monospace; color: var(--text); }
+  tr:last-child td { border-bottom: none; }
+  tr { transition: background-color 0.2s; }
+  tr:hover { background-color: rgba(255,255,255,0.03); }
+  body.light-mode tr:hover { background-color: #f1f5f9; }
+
+    /* --- CSS COLONNE REQUETE --- */
+  td:first-child { width: 40%; cursor: pointer; color: var(--primary); transition: all 0.3s ease; vertical-align: middle; position: relative; }
+  .query-wrapper { position: relative; display: flex; align-items: flex-start; gap: 8px; }
+  .query-content { flex-grow: 1; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; text-overflow: ellipsis; max-height: 1.5em; word-break: break-all; font-family: "JetBrains Mono", monospace; }
+  .query-content:not(.expanded) br { display: none; }
+  .query-content.expanded { -webkit-line-clamp: unset; max-height: none; background: rgba(56,189,248,0.05); border-left: 3px solid var(--primary); padding: 10px 13px; color: var(--text); border-radius: 0 8px 8px 0; white-space: pre-wrap; }
+  body.light-mode .query-content.expanded { background: #fffbe6; border-left-color: #f59e0b; }
+  td:first-child:hover .query-content:not(.expanded) { color: var(--hover); }
+  
+  .copy-btn { padding: 4px; border-radius: 4px; background: rgba(255,255,255,0.05); border: 1px solid var(--border); color: var(--text-muted); cursor: pointer; transition: all 0.2s; opacity: 0; display: flex; align-items: center; justify-content: center; }
+  td:first-child:hover .copy-btn { opacity: 1; }
+  .copy-btn:hover { background: var(--primary); color: #fff; border-color: var(--primary); }
+  .copy-btn.copied { background: #10b981; color: #fff; border-color: #10b981; }
+  td:first-child:hover .query-content:not(.expanded) { color: var(--hover); }
+
+  /* Back to Top */
+  #backToTop { position: fixed; bottom: 30px; right: 30px; width: 50px; height: 50px; background: var(--primary); color: white; border: none; border-radius: 50%; cursor: pointer; display: none; align-items: center; justify-content: center; font-size: 1.5rem; box-shadow: 0 4px 15px rgba(0,0,0,0.3); transition: all 0.3s; z-index: 1000; }
+  #backToTop:hover { transform: translateY(-5px); background: var(--hover); }
+  .icon { width: 18px; height: 18px; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; fill: none; vertical-align: middle; }
+  #backToTop .icon { stroke: white; width: 22px; height: 22px; }
+
+  .timestamp { font-size: 0.85em; color: var(--text-muted); text-align: center; margin-top: 60px; padding-top: 20px; border-top: 1px solid var(--border); font-weight: 500; }
+</style>
+</head>
+<body>
+<div class="header-container">
+  <div>
+    <h1 data-i18n="title">Rapport Performance PostgreSQL <span class="pg-version-badge"> 17.11 </span></h1>
+  </div>
+  <div style="display: flex; gap: 10px;">
+    <button class="theme-switch" onclick="toggleQueries()" id="query-toggle-btn"><span id="query-toggle-text">SHORT / LONG</span></button>
+    <button class="theme-switch" onclick="toggleLanguage()">
+      <span id="lang-icon"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg></span> <span id="lang-text">EN</span>
+    </button>
+    <button class="theme-switch" onclick="toggleTheme()">
+      <span id="theme-icon"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg></span> <span id="theme-text">Mode Clair</span>
+    </button>
+  </div>
+</div>
+<div class="nav-menu">
+<strong data-i18n="nav_title">Navigation Rapide :</strong>
+<a href="#cpu" data-i18n="nav_cpu">1. Top CPU</a>
+<a href="#io" data-i18n="nav_io">2. Top IO</a>
+<a href="#planning" data-i18n="nav_plan">3. Planning Time</a>
+<a href="#wal" data-i18n="nav_wal">4. Top WAL</a>
+<a href="#freq" data-i18n="nav_freq">5. Frequence</a>
+<a href="#heavy" data-i18n="nav_heavy">6. Lourdes (Candidats Parallel)</a>
+<a href="#jitter" data-i18n="nav_jitter">7. Jitter</a>
+<a href="#temp" data-i18n="nav_temp">8. Temp Files</a>
+<a href="#cache" data-i18n="nav_cache">9. Cache Miss</a>
+<a href="#jit" data-i18n="nav_jit">10. JIT</a>
+<a href="#info" data-i18n="nav_info">11. Info Globales</a>
+</div>
+<h2 id="cpu" data-i18n="h2_cpu">1. Top Consommateurs CPU (Hors IO)</h2>
+<p data-i18n="p_cpu">Charge processeur pure (Total Time - IO Time).</p>
+<table border="1" class="table-container">
+  <tr>
+    <th align="center">Requete (Cliquer)</th>
+    <th align="center">Appels</th>
+    <th align="center">Total (ms)</th>
+    <th align="center">CPU Time (ms)</th>
+    <th align="center">PCT CPU</th>
+  </tr>
+</table>
+
+<h2 id="io" data-i18n="h2_io">2. Top IO (Latence Disque)</h2>
+<p data-i18n="p_io">Attente disque (lecture/ecriture).</p>
+<table border="1" class="table-container">
+  <tr>
+    <th align="center">Requete (Cliquer)</th>
+    <th align="center">Appels</th>
+    <th align="center">Moyenne (ms)</th>
+    <th align="center">IO Wait (ms)</th>
+    <th align="center">PCT IO</th>
+  </tr>
+  <tr valign="top">
+    <td align="left">CREATE DATABASE &quot;shopdb&quot;</td>
+    <td align="right">1</td>
+    <td align="right">81.48</td>
+    <td align="right">15.33</td>
+    <td align="right">18.8</td>
+  </tr>
+  <tr valign="top">
+    <td align="left">ANALYZE</td>
+    <td align="right">1</td>
+    <td align="right">156.97</td>
+    <td align="right">4.82</td>
+    <td align="right">3.1</td>
+  </tr>
+  <tr valign="top">
+    <td align="left">INSERT INTO sales.order_items (order_id, sku, qty, unit_cents)<br />
+  SELECT $1+(g%$2), $3||(g%$4), $5+(g%$6), (g*$7)%$8 FROM generate_series($9,$10) g</td>
+    <td align="right">1</td>
+    <td align="right">200.91</td>
+    <td align="right">4.73</td>
+    <td align="right">2.4</td>
+  </tr>
+  <tr valign="top">
+    <td align="left">CREATE EXTENSION IF NOT EXISTS pg_stat_statements</td>
+    <td align="right">1</td>
+    <td align="right">13.45</td>
+    <td align="right">1.99</td>
+    <td align="right">14.8</td>
+  </tr>
+  <tr valign="top">
+    <td align="left">INSERT INTO sales.orders (customer_id, status, total_cents)<br />
+  SELECT $1+(g%$2), (ARRAY[$3,$4,$5,$6])[$7+(g%$8)], (g*$9)%$10 FROM generate_series($11,$12) g</td>
+    <td align="right">1</td>
+    <td align="right">107.37</td>
+    <td align="right">1.76</td>
+    <td align="right">1.6</td>
+  </tr>
+  <tr valign="top">
+    <td align="left">WITH<br />
+-- ---------------------------------------------------------------------------<br />
+meta AS (<br />
+  SELECT json_build_object(<br />
+    $1,               $2,<br />
+    $3,            $4,<br />
+    $5,       now(),<br />
+    $6,         version(),<br />
+    $7,     current_setting($8)::int,<br />
+    $9,           current_database(),<br />
+    $10,    pg_encoding_to_char(<br />
+                            (SELECT encoding FROM pg_database WHERE datname = current_database())),<br />
+    $11,         current_setting($12)::int,<br />
+    $13, current_setting($14)::bigint<br />
+  ) AS v<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- databases: include XID wraparound age for v_wrap detection<br />
+databases AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $15,              datname,<br />
+    $16,             pg_get_userbyid(datdba),<br />
+    $17,          pg_encoding_to_char(encoding),<br />
+    $18,           datcollate,<br />
+    $19,             datctype,<br />
+    $20,        pg_database_size(datname),<br />
+    $21,         datconnlimit,<br />
+    $22,       datistemplate,<br />
+    $23,        datallowconn,<br />
+    $24,      datfrozenxid::text,<br />
+    $25,           age(datfrozenxid),<br />
+    $26,       round($27 * age(datfrozenxid)<br />
+                           / NULLIF(current_setting($28)::bigint, $29), $30)<br />
+  ) ORDER BY datname) AS v<br />
+  FROM pg_database<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+schemas AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $31,  nspname,<br />
+    $32, pg_get_userbyid(nspowner)<br />
+  ) ORDER BY nspname) AS v<br />
+  FROM pg_namespace<br />
+  WHERE nspname NOT LIKE $33<br />
+    AND nspname NOT LIKE $34<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+extensions AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $35,         extname,<br />
+    $36,      extversion,<br />
+    $37,       n.nspname,<br />
+    $38,  extrelocatable<br />
+  ) ORDER BY extname) AS v<br />
+  FROM pg_extension e<br />
+  JOIN pg_namespace n ON n.oid = e.extnamespace<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+tablespaces AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $39,       spcname,<br />
+    $40,      pg_get_userbyid(spcowner),<br />
+    $41,   pg_tablespace_location(oid),<br />
+    $42, pg_tablespace_size(oid)<br />
+  ) ORDER BY spcname) AS v<br />
+  FROM pg_tablespace<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- tables: include relpages + relfrozenxid (needed for bloat formula + wraparound)<br />
+tables AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $43,          t.schemaname,<br />
+    $44,           t.tablename,<br />
+    $45,           t.tableowner,<br />
+    $46,      t.tablespace,<br />
+    $47,     pg_total_relation_size(t.schemaname || $48 || quote_ident(t.tablename)),<br />
+    $49,     pg_relation_size(t.schemaname || $50 || quote_ident(t.tablename)),<br />
+    $51,     pg_indexes_size(t.schemaname || $52 || quote_ident(t.tablename)),<br />
+    $53,     COALESCE(<br />
+                         pg_total_relation_size(t.schemaname || $54 || quote_ident(t.tablename))<br />
+                         - pg_relation_size(t.schemaname || $55 || quote_ident(t.tablename))<br />
+                         - pg_indexes_size(t.schemaname || $56 || quote_ident(t.tablename)), $57),<br />
+    $58,    c.reltuples::bigint,<br />
+    $59,        c.relpages,<br />
+    $60,   c.relallvisible,<br />
+    $61,    c.relfrozenxid::text,<br />
+    $62,   age(c.relfrozenxid),<br />
+    $63,         c.relkind::text,<br />
+    $64,  c.relpersistence::text,<br />
+    $65,  c.relhastriggers,<br />
+    $66,     c.relhasindex,<br />
+    $67,      (SELECT (regexp_match(c.reloptions::text, $68))[$69]::int)<br />
+  ) ORDER BY t.schemaname, t.tablename) AS v<br />
+  FROM pg_tables t<br />
+  JOIN pg_class c      ON c.relname = t.tablename<br />
+  JOIN pg_namespace n  ON n.oid = c.relnamespace AND n.nspname = t.schemaname<br />
+  WHERE t.schemaname NOT IN ($70, $71, $72)<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- columns: full type info + alignment/length for padding waste analysis<br />
+columns AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $73,        n.nspname,<br />
+    $74,         c.relname,<br />
+    $75,        a.attname,<br />
+    $76,      a.attnum,<br />
+    $77,     t.typname,<br />
+    $78, t.typcategory::text,<br />
+    $79,        a.attlen,        -- -1 = variable length<br />
+    $80,      a.attalign::text, -- c=1B, s=2B, i=4B, d=8B<br />
+    $81,    a.attstorage::text, -- p=plain, e=external, m=main, x=extended<br />
+    $82,    a.attnotnull,<br />
+    $83,      a.attndims,<br />
+    $84,     a.atthasdef,<br />
+    $85,   a.attidentity::text,<br />
+    $86,  a.attgenerated::text,<br />
+    $87,     a.atttypmod,     -- type modifier (e.g. varchar(N))<br />
+    $88,      CASE a.attlen<br />
+                       WHEN $89 THEN $90<br />
+                       ELSE a.attlen::text || $91<br />
+                     END,<br />
+    $92,   CASE a.attalign<br />
+                       WHEN $93 THEN $94<br />
+                       WHEN $95 THEN $96<br />
+                       WHEN $97 THEN $98<br />
+                       WHEN $99 THEN $100<br />
+                       ELSE $101<br />
+                     END<br />
+  ) ORDER BY n.nspname, c.relname, a.attnum) AS v<br />
+  FROM pg_attribute a<br />
+  JOIN pg_class c     ON c.oid = a.attrelid<br />
+  JOIN pg_namespace n ON n.oid = c.relnamespace<br />
+  JOIN pg_type t      ON t.oid = a.atttypid<br />
+  WHERE a.attnum &gt; $102<br />
+    AND NOT a.attisdropped<br />
+    AND n.nspname NOT IN ($103, $104, $105)<br />
+    AND c.relkind IN ($106, $107)  -- regular tables and partitioned tables only<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+indexes AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $108,       schemaname,<br />
+    $109,        tablename,<br />
+    $110,   indexname,<br />
+    $111,   tablespace,<br />
+    $112,    indexdef,<br />
+    $113,   pg_relation_size(schemaname || $114 || quote_ident(indexname)),<br />
+    $115,    ix.indisunique,<br />
+    $116,   ix.indisprimary,<br />
+    $117, ix.indisexclusion,<br />
+    $118,     ix.indisvalid,<br />
+    $119,     ix.indisready,<br />
+    $120,     array_length(ix.indkey, $121),<br />
+    $122,       ix.indkey::int2[]::text,  -- column positions (for dup detection)<br />
+    $123,     ix.indclass::int4[]::text,<br />
+    $124,    ix.indoption::int2[]::text,<br />
+    $125,    ix.indexprs IS NOT NULL,<br />
+    $126,     ix.indpred IS NOT NULL<br />
+  ) ORDER BY schemaname, tablename, indexname) AS v<br />
+  FROM pg_indexes i<br />
+  JOIN pg_class c    ON c.relname = indexname<br />
+  JOIN pg_index ix   ON ix.indexrelid = c.oid<br />
+  JOIN pg_namespace n ON n.oid = c.relnamespace<br />
+  WHERE schemaname NOT IN ($127, $128)<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- constraints: include conkey (column positions) for unindexed FK detection<br />
+constraints AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $129,        n.nspname,<br />
+    $130,         cl.relname,<br />
+    $131,          conname,<br />
+    $132,          CASE contype<br />
+                       WHEN $133 THEN $134<br />
+                       WHEN $135 THEN $136<br />
+                       WHEN $137 THEN $138<br />
+                       WHEN $139 THEN $140<br />
+                       WHEN $141 THEN $142<br />
+                       WHEN $143 THEN $144<br />
+                       ELSE contype::text END,<br />
+    $145, condeferrable,<br />
+    $146,   condeferred,<br />
+    $147,  convalidated,<br />
+    $148,        conkey::text,   -- local column positions<br />
+    $149,       confkey::text,  -- referenced column positions<br />
+    $150,      array_length(conkey, $151),<br />
+    $152,     fn.nspname,<br />
+    $153,      fc.relname<br />
+  ) ORDER BY n.nspname, cl.relname, conname) AS v<br />
+  FROM pg_constraint co<br />
+  JOIN pg_class     cl ON cl.oid = co.conrelid<br />
+  JOIN pg_namespace n  ON n.oid = cl.relnamespace<br />
+  LEFT JOIN pg_class     fc ON fc.oid = co.confrelid<br />
+  LEFT JOIN pg_namespace fn ON fn.oid = fc.relnamespace<br />
+  WHERE n.nspname NOT IN ($154, $155)<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- unindexed_fks: pre-computed (mirrors v_fk_unindexed in ultimate_report)<br />
+unindexed_fks AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $156,  n1.nspname,<br />
+    $157,   c1.relname,<br />
+    $158,  a1.attname,<br />
+    $159, t.conname,<br />
+    $160, fn.nspname || $161 || fc.relname<br />
+  ) ORDER BY n1.nspname, c1.relname) AS v<br />
+  FROM pg_constraint t<br />
+  JOIN pg_attribute  a1 ON a1.attrelid = t.conrelid AND a1.attnum = t.conkey[$162]<br />
+  JOIN pg_class      c1 ON c1.oid = t.conrelid<br />
+  JOIN pg_namespace  n1 ON n1.oid = c1.relnamespace<br />
+  LEFT JOIN pg_class     fc ON fc.oid = t.confrelid<br />
+  LEFT JOIN pg_namespace fn ON fn.oid = fc.relnamespace<br />
+  WHERE t.contype = $163<br />
+    AND n1.nspname NOT IN ($164, $165)<br />
+    AND NOT EXISTS (<br />
+      SELECT $166 FROM pg_index i<br />
+      WHERE i.indrelid = t.conrelid<br />
+        AND i.indkey[$167] = t.conkey[$168]<br />
+    )<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+sequences AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $169,        n.nspname,<br />
+    $170,          c.relname,<br />
+    $171,     t.typname,<br />
+    $172,         s.seqstart,<br />
+    $173,     s.seqincrement,<br />
+    $174,           s.seqmin,<br />
+    $175,           s.seqmax,<br />
+    $176,         s.seqcache,<br />
+    $177,         s.seqcycle,<br />
+    $178,    ps.last_value,<br />
+    $179, CASE WHEN s.seqmax &gt; s.seqmin<br />
+                       THEN round($180 * (<br />
+                         COALESCE(ps.last_value, s.seqmin) - s.seqmin<br />
+                       ) / NULLIF(s.seqmax - s.seqmin, $181), $182)<br />
+                     END<br />
+  ) ORDER BY n.nspname, c.relname) AS v<br />
+  FROM pg_sequence s<br />
+  JOIN pg_class c      ON c.oid = s.seqrelid<br />
+  JOIN pg_namespace n  ON n.oid = c.relnamespace<br />
+  JOIN pg_type t       ON t.oid = s.seqtypid<br />
+  LEFT JOIN pg_sequences ps ON ps.schemaname = n.nspname AND ps.sequencename = c.relname<br />
+  WHERE n.nspname NOT IN ($183, $184)<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+views AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $185,         table_schema,<br />
+    $186,           table_name,<br />
+    $187,   is_updatable = $188,<br />
+    $189,  is_insertable_into = $190<br />
+  ) ORDER BY table_schema, table_name) AS v<br />
+  FROM information_schema.views<br />
+  WHERE table_schema NOT IN ($191, $192)<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+functions_summary AS (<br />
+  SELECT json_build_object(<br />
+    $193,     count(*),<br />
+    $194, json_object_agg(lanname, cnt)<br />
+  ) AS v<br />
+  FROM (<br />
+    SELECT l.lanname, count(*) AS cnt<br />
+    FROM pg_proc p<br />
+    JOIN pg_language l  ON l.oid = p.prolang<br />
+    JOIN pg_namespace n ON n.oid = p.pronamespace<br />
+    WHERE n.nspname NOT IN ($195, $196)<br />
+    GROUP BY l.lanname<br />
+  ) sub<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- roles: include password hash TYPE (not value) for security audit<br />
+roles AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $197,         rolname,<br />
+    $198,    rolsuper,<br />
+    $199,      rolinherit,<br />
+    $200,   rolcreaterole,<br />
+    $201,     rolcreatedb,<br />
+    $202,        rolcanlogin,<br />
+    $203,  rolreplication,<br />
+    $204,    rolbypassrls,<br />
+    $205,    rolconnlimit,<br />
+    $206,  rolvaliduntil,<br />
+    $207, rolpassword IS NOT NULL,<br />
+    $208,     CASE<br />
+                      WHEN rolpassword IS NULL       THEN $209<br />
+                      WHEN rolpassword LIKE $210 THEN $211<br />
+                      WHEN rolpassword LIKE $212   THEN $213<br />
+                      ELSE $214<br />
+                    END,<br />
+    $215,   CASE<br />
+                      WHEN rolsuper OR rolcreaterole OR rolreplication THEN $216<br />
+                      WHEN rolpassword IS NULL AND rolcanlogin THEN $217<br />
+                      ELSE $218<br />
+                    END<br />
+  ) ORDER BY rolname) AS v<br />
+  FROM pg_roles<br />
+  WHERE rolname NOT LIKE $219<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- settings: complete set used by audit checks<br />
+settings_key AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $220,     name,<br />
+    $221,  setting,<br />
+    $222,     unit,<br />
+    $223,   source,<br />
+    $224,  min_val,<br />
+    $225,  max_val<br />
+  ) ORDER BY name) AS v<br />
+  FROM pg_settings<br />
+  WHERE name IN (<br />
+    $226,$227,$228,$229,<br />
+    $230,$231,$232,$233,<br />
+    $234,$235,<br />
+    $236,$237,$238,<br />
+    $239,$240,$241,<br />
+    $242,$243,$244,<br />
+    $245,$246,$247,$248,<br />
+    $249,$250,$251,<br />
+    $252,$253,$254,<br />
+    $255,$256,$257,<br />
+    $258,$259,$260,$261,<br />
+    $262,$263,$264,<br />
+    $265,$266,$267,<br />
+    $268,$269<br />
+  )<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- pg_stats: planner column statistics — used by bloat formula in ultimate_report<br />
+-- (null_frac, avg_width per column; NOT actual data values)<br />
+planner_stats AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $270,        schemaname,<br />
+    $271,         tablename,<br />
+    $272,        attname,<br />
+    $273,     inherited,<br />
+    $274,     round(null_frac::numeric, $275),<br />
+    $276,     avg_width,<br />
+    $277,    n_distinct,<br />
+    $278,   round(correlation::numeric, $279),<br />
+    $280, array_length(most_common_freqs, $281),<br />
+    $282,  array_length(histogram_bounds, $283)<br />
+  ) ORDER BY schemaname, tablename, attname) AS v<br />
+  FROM pg_stats<br />
+  WHERE schemaname NOT IN ($284, $285)<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- bloat_pre_computed: same formula as v_bloat in ultimate_report.sql<br />
+bloat_computed AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $286,      schemaname,<br />
+    $287,       tablename,<br />
+    $288,    relpages,<br />
+    $289,        otta,<br />
+    $290,      round((CASE WHEN otta = $291 THEN $292<br />
+                          ELSE relpages::float / NULLIF(otta, $293) END)::numeric, $294),<br />
+    $295,GREATEST(relpages - otta, $296),<br />
+    $297, GREATEST(relpages - otta, $298) * current_setting($299)::int<br />
+  ) ORDER BY GREATEST(relpages - otta, $300) DESC NULLS LAST) AS v<br />
+  FROM (<br />
+    SELECT schemaname, tablename, cc.relpages,<br />
+      CEIL((cc.reltuples * $301) / NULLIF(current_setting($302)::int - $303, $304))::bigint AS otta<br />
+    FROM pg_stats s<br />
+    JOIN pg_class cc     ON cc.relname = s.tablename<br />
+    JOIN pg_namespace nn ON cc.relnamespace = nn.oid AND nn.nspname = s.schemaname<br />
+    WHERE s.schemaname NOT IN ($305, $306)<br />
+    GROUP BY schemaname, tablename, cc.relpages, cc.reltuples<br />
+  ) foo<br />
+  WHERE relpages &gt; otta<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- available extensions (for extension audit)<br />
+available_extensions AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $307,              name,<br />
+    $308,   default_version,<br />
+    $309, installed_version,<br />
+    $310,           comment<br />
+  ) ORDER BY name) AS v<br />
+  FROM pg_available_extensions<br />
+  WHERE installed_version IS NOT NULL<br />
+     OR name IN ($311,$312,$313,<br />
+                 $314,$315,$316,$317,$318)<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- functions: per-function / procedure detail<br />
+functions AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $319,           n.nspname,<br />
+    $320,             p.proname,<br />
+    $321,         l.lanname,<br />
+    $322,             CASE p.prokind<br />
+                          WHEN $323 THEN $324<br />
+                          WHEN $325 THEN $326<br />
+                          WHEN $327 THEN $328<br />
+                          WHEN $329 THEN $330<br />
+                          ELSE p.prokind::text END,<br />
+    $331,      CASE WHEN p.prokind = $332 THEN $333<br />
+                             ELSE pg_get_function_result(p.oid) END,<br />
+    $334,        pg_get_function_arguments(p.oid),<br />
+    $335,       CASE p.provolatile<br />
+                          WHEN $336 THEN $337<br />
+                          WHEN $338 THEN $339<br />
+                          WHEN $340 THEN $341 END,<br />
+    $342, p.prosecdef,<br />
+    $343,           p.proisstrict,<br />
+    $344,         CASE p.proparallel<br />
+                          WHEN $345 THEN $346<br />
+                          WHEN $347 THEN $348<br />
+                          WHEN $349 THEN $350 END,<br />
+    $351,             p.procost,<br />
+    $352,             p.prorows,<br />
+    $353,       CASE WHEN l.lanname NOT IN ($354, $355)<br />
+                               THEN pg_get_functiondef(p.oid)<br />
+                             ELSE $356 END<br />
+  ) ORDER BY n.nspname, p.proname, pg_get_function_arguments(p.oid)) AS v<br />
+  FROM pg_proc p<br />
+  JOIN pg_namespace n ON n.oid = p.pronamespace<br />
+  JOIN pg_language l  ON l.oid = p.prolang<br />
+  WHERE n.nspname NOT IN ($357, $358)<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- triggers: per-trigger detail<br />
+triggers AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $359,           n.nspname,<br />
+    $360,            c.relname,<br />
+    $361,     t.tgname,<br />
+    $362,          t.tgenabled &lt;&gt; $363,<br />
+    $364,           CASE<br />
+                          WHEN (t.tgtype &amp;  $365) &lt;&gt; $366 THEN $367<br />
+                          WHEN (t.tgtype &amp; $368) &lt;&gt; $369 THEN $370<br />
+                          ELSE $371 END,<br />
+    $372,           array_remove(ARRAY[<br />
+                          CASE WHEN (t.tgtype &amp;  $373) &lt;&gt; $374 THEN $375   END,<br />
+                          CASE WHEN (t.tgtype &amp;  $376) &lt;&gt; $377 THEN $378   END,<br />
+                          CASE WHEN (t.tgtype &amp; $379) &lt;&gt; $380 THEN $381   END,<br />
+                          CASE WHEN (t.tgtype &amp; $382) &lt;&gt; $383 THEN $384 END<br />
+                        ], $385),<br />
+    $386,      CASE WHEN (t.tgtype &amp; $387) &lt;&gt; $388 THEN $389 ELSE $390 END,<br />
+    $391,  fn.nspname,<br />
+    $392,    p.proname,<br />
+    $393,        pg_get_expr(t.tgqual, t.tgrelid)<br />
+  ) ORDER BY n.nspname, c.relname, t.tgname) AS v<br />
+  FROM pg_trigger t<br />
+  JOIN pg_class c       ON c.oid = t.tgrelid<br />
+  JOIN pg_namespace n   ON n.oid = c.relnamespace<br />
+  JOIN pg_proc p        ON p.oid = t.tgfoid<br />
+  JOIN pg_namespace fn  ON fn.oid = p.pronamespace<br />
+  WHERE NOT t.tgisinternal<br />
+    AND n.nspname NOT IN ($394, $395)<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- mat_views: materialized views<br />
+mat_views AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $396,       schemaname,<br />
+    $397,         matviewname,<br />
+    $398,        matviewowner,<br />
+    $399,   tablespace,<br />
+    $400, ispopulated,<br />
+    $401,   definition<br />
+  ) ORDER BY schemaname, matviewname) AS v<br />
+  FROM pg_matviews<br />
+  WHERE schemaname NOT IN ($402, $403)<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- policies: row-level security policies<br />
+policies AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $404,       n.nspname,<br />
+    $405,        c.relname,<br />
+    $406,         p.polname,<br />
+    $407,   p.polpermissive,<br />
+    $408,        CASE<br />
+                      WHEN p.polroles = $409::oid[] THEN ARRAY[$410]<br />
+                      ELSE ARRAY(SELECT rolname FROM pg_roles r<br />
+                                 WHERE r.oid = ANY(p.polroles))<br />
+                    END,<br />
+    $411,          CASE p.polcmd<br />
+                      WHEN $412 THEN $413<br />
+                      WHEN $414 THEN $415<br />
+                      WHEN $416 THEN $417<br />
+                      WHEN $418 THEN $419<br />
+                      WHEN $420 THEN $421<br />
+                    END,<br />
+    $422,         pg_get_expr(p.polqual, p.polrelid),<br />
+    $423,   pg_get_expr(p.polwithcheck, p.polrelid),<br />
+    $424,  c.relrowsecurity,<br />
+    $425,   c.relforcerowsecurity<br />
+  ) ORDER BY n.nspname, c.relname, p.polname) AS v<br />
+  FROM pg_policy p<br />
+  JOIN pg_class c     ON c.oid = p.polrelid<br />
+  JOIN pg_namespace n ON n.oid = c.relnamespace<br />
+  WHERE n.nspname NOT IN ($426, $427)<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- rules: rewrite rules on tables/views (excluding default view return rules)<br />
+-- pg_rules only has schemaname/tablename/rulename/definition; event and<br />
+-- do_instead come from pg_rewrite (ev_type, is_instead).<br />
+rules AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $428,     n.nspname,<br />
+    $429,      c.relname,<br />
+    $430,  r.rulename,<br />
+    $431,      CASE r.ev_type<br />
+                    WHEN $432 THEN $433<br />
+                    WHEN $434 THEN $435<br />
+                    WHEN $436 THEN $437<br />
+                    WHEN $438 THEN $439<br />
+                    ELSE r.ev_type::text END,<br />
+    $440, r.is_instead,<br />
+    $441, pg_get_ruledef(r.oid)<br />
+  ) ORDER BY n.nspname, c.relname, r.rulename) AS v<br />
+  FROM pg_rewrite r<br />
+  JOIN pg_class c     ON c.oid = r.ev_class<br />
+  JOIN pg_namespace n ON n.oid = c.relnamespace<br />
+  WHERE n.nspname NOT IN ($442, $443)<br />
+    AND r.rulename &lt;&gt; $444<br />
+)<br />
+-- ---------------------------------------------------------------------------<br />
+SELECT json_build_object(<br />
+  $445,               (SELECT v FROM meta),<br />
+  $446,           (SELECT v FROM databases),<br />
+  $447,             (SELECT v FROM schemas),<br />
+  $448,          (SELECT v FROM extensions),<br />
+  $449,(SELECT v FROM available_extensions),<br />
+  $450,         (SELECT v FROM tablespaces),<br />
+  $451,              (SELECT v FROM tables),<br />
+  $452,             (SELECT v FROM columns),<br />
+  $453,             (SELECT v FROM indexes),<br />
+  $454,         (SELECT v FROM constraints),<br />
+  $455,       (SELECT v FROM unindexed_fks),<br />
+  $456,           (SELECT v FROM sequences),<br />
+  $457,               (SELECT v FROM views),<br />
+  $458,   (SELECT v FROM functions_summary),<br />
+  $459,               (SELECT v FROM roles),<br />
+  $460,        (SELECT v FROM settings_key),<br />
+  $461,       (SELECT v FROM planner_stats),<br />
+  $462,      (SELECT v FROM bloat_computed),<br />
+  $463,           (SELECT v FROM functions),<br />
+  $464,            (SELECT v FROM triggers),<br />
+  $465,           (SELECT v FROM mat_views),<br />
+  $466,            (SELECT v FROM policies),<br />
+  $467,               (SELECT v FROM rules)<br />
+)</td>
+    <td align="right">1</td>
+    <td align="right">30.62</td>
+    <td align="right">0.93</td>
+    <td align="right">3.0</td>
+  </tr>
+  <tr valign="top">
+    <td align="left">INSERT INTO billing.invoices (order_id, amount_cents) SELECT $1+(g%$2), (g*$3)%$4 FROM generate_series($5,$6) g</td>
+    <td align="right">1</td>
+    <td align="right">49.68</td>
+    <td align="right">0.81</td>
+    <td align="right">1.6</td>
+  </tr>
+  <tr valign="top">
+    <td align="left">INSERT INTO billing.payments (invoice_id, method, captured_at)<br />
+  SELECT $1+(g%$2), (ARRAY[$3,$4,$5])[$6+(g%$7)], now() - (g||$8)::interval FROM generate_series($9,$10) g</td>
+    <td align="right">1</td>
+    <td align="right">41.97</td>
+    <td align="right">0.74</td>
+    <td align="right">1.8</td>
+  </tr>
+  <tr valign="top">
+    <td align="left">UPDATE sales.orders SET status=$1 WHERE id % $2 = $3</td>
+    <td align="right">1</td>
+    <td align="right">17.17</td>
+    <td align="right">0.74</td>
+    <td align="right">4.3</td>
+  </tr>
+  <tr valign="top">
+    <td align="left">CREATE TABLE IF NOT EXISTS sales.customers (<br />
+  id bigserial PRIMARY KEY, email text NOT NULL, country char(2) NOT NULL DEFAULT 'FR',<br />
+  created_at timestamptz NOT NULL DEFAULT now())</td>
+    <td align="right">1</td>
+    <td align="right">3.81</td>
+    <td align="right">0.67</td>
+    <td align="right">17.6</td>
+  </tr>
+</table>
+
+<h2 id="planning" data-i18n="h2_plan">3. Temps de Planification</h2>
+<p data-i18n="p_plan">Necessite track_planning = on.</p>
+<table border="1" class="table-container">
+  <tr>
+    <th align="center">Requete (Cliquer)</th>
+    <th align="center">Appels</th>
+    <th align="center">Total Plan (ms)</th>
+    <th align="center">Moy Plan (ms)</th>
+    <th align="center">PCT Planning</th>
+  </tr>
+</table>
+
+<h2 id="wal" data-i18n="h2_wal">4. Top Generateurs de WAL</h2>
+<p data-i18n="p_wal">Ecritures journalisees (pression sur les checkpoints).</p>
+<table border="1" class="table-container">
+  <tr>
+    <th align="center">Requete (Cliquer)</th>
+    <th align="center">Appels</th>
+    <th align="center">Total WAL</th>
+    <th align="center">Bytes / Appel</th>
+    <th align="center">WAL Records</th>
+  </tr>
+  <tr valign="top">
+    <td align="left">INSERT INTO sales.order_items (order_id, sku, qty, unit_cents)<br />
+  SELECT $1+(g%$2), $3||(g%$4), $5+(g%$6), (g*$7)%$8 FROM generate_series($9,$10) g</td>
+    <td align="right">1</td>
+    <td align="left">5804 kB</td>
+    <td align="right">5942976.00</td>
+    <td align="right">81162</td>
+  </tr>
+  <tr valign="top">
+    <td align="left">CREATE DATABASE &quot;shopdb&quot;</td>
+    <td align="right">1</td>
+    <td align="left">4237 kB</td>
+    <td align="right">4338564.00</td>
+    <td align="right">1221</td>
+  </tr>
+  <tr valign="top">
+    <td align="left">INSERT INTO sales.orders (customer_id, status, total_cents)<br />
+  SELECT $1+(g%$2), (ARRAY[$3,$4,$5,$6])[$7+(g%$8)], (g*$9)%$10 FROM generate_series($11,$12) g</td>
+    <td align="right">1</td>
+    <td align="left">2511 kB</td>
+    <td align="right">2570765.00</td>
+    <td align="right">34501</td>
+  </tr>
+  <tr valign="top">
+    <td align="left">INSERT INTO billing.invoices (order_id, amount_cents) SELECT $1+(g%$2), (g*$3)%$4 FROM generate_series($5,$6) g</td>
+    <td align="right">1</td>
+    <td align="left">1184 kB</td>
+    <td align="right">1212318.00</td>
+    <td align="right">18199</td>
+  </tr>
+  <tr valign="top">
+    <td align="left">INSERT INTO billing.payments (invoice_id, method, captured_at)<br />
+  SELECT $1+(g%$2), (ARRAY[$3,$4,$5])[$6+(g%$7)], now() - (g||$8)::interval FROM generate_series($9,$10) g</td>
+    <td align="right">1</td>
+    <td align="left">1038 kB</td>
+    <td align="right">1063404.00</td>
+    <td align="right">15166</td>
+  </tr>
+  <tr valign="top">
+    <td align="left">UPDATE sales.orders SET status=$1 WHERE id % $2 = $3</td>
+    <td align="right">1</td>
+    <td align="left">651 kB</td>
+    <td align="right">666136.00</td>
+    <td align="right">8164</td>
+  </tr>
+  <tr valign="top">
+    <td align="left">ANALYZE</td>
+    <td align="right">1</td>
+    <td align="left">462 kB</td>
+    <td align="right">473360.00</td>
+    <td align="right">1153</td>
+  </tr>
+  <tr valign="top">
+    <td align="left">CREATE EXTENSION IF NOT EXISTS pg_stat_statements</td>
+    <td align="right">1</td>
+    <td align="left">381 kB</td>
+    <td align="right">389962.00</td>
+    <td align="right">961</td>
+  </tr>
+  <tr valign="top">
+    <td align="left">INSERT INTO sales.customers (email, country)<br />
+  SELECT $1||g||$2, (ARRAY[$3,$4,$5,$6])[$7+(g%$8)] FROM generate_series($9,$10) g</td>
+    <td align="right">1</td>
+    <td align="left">320 kB</td>
+    <td align="right">327979.00</td>
+    <td align="right">4067</td>
+  </tr>
+  <tr valign="top">
+    <td align="left">CREATE TABLE IF NOT EXISTS sales.customers (<br />
+  id bigserial PRIMARY KEY, email text NOT NULL, country char(2) NOT NULL DEFAULT 'FR',<br />
+  created_at timestamptz NOT NULL DEFAULT now())</td>
+    <td align="right">1</td>
+    <td align="left">86 kB</td>
+    <td align="right">87670.00</td>
+    <td align="right">186</td>
+  </tr>
+</table>
+
+<h2 id="freq" data-i18n="h2_freq">5. Top Frequence (Requetes marteaux)</h2>
+<p data-i18n="p_freq">Requetes tres rapides mais au volume massif.</p>
+<table border="1" class="table-container">
+  <tr>
+    <th align="center">Requete (Cliquer)</th>
+    <th align="center">Appels</th>
+    <th align="center">Moyenne (ms)</th>
+    <th align="center">Total (ms)</th>
+    <th align="center">PCT Charge</th>
+  </tr>
+  <tr valign="top">
+    <td align="left">SELECT count(*) FROM sales.orders WHERE total_cents &gt; $1</td>
+    <td align="right">6</td>
+    <td align="right">0.63</td>
+    <td align="right">3.77</td>
+    <td align="right">0.40</td>
+  </tr>
+  <tr valign="top">
+    <td align="left">SELECT * FROM sales.v_order_totals ORDER BY total_cents DESC LIMIT $1</td>
+    <td align="right">6</td>
+    <td align="right">12.84</td>
+    <td align="right">77.05</td>
+    <td align="right">8.11</td>
+  </tr>
+  <tr valign="top">
+    <td align="left">SELECT count(*) FROM sales.order_items WHERE sku LIKE $1</td>
+    <td align="right">6</td>
+    <td align="right">2.38</td>
+    <td align="right">14.29</td>
+    <td align="right">1.50</td>
+  </tr>
+  <tr valign="top">
+    <td align="left">SELECT count(*) FROM sales.orders WHERE status = $1</td>
+    <td align="right">6</td>
+    <td align="right">0.90</td>
+    <td align="right">5.40</td>
+    <td align="right">0.57</td>
+  </tr>
+  <tr valign="top">
+    <td align="left">SELECT o.status, avg(oi.unit_cents) FROM sales.orders o JOIN sales.order_items oi ON oi.order_id=o.id GROUP BY o.status</td>
+    <td align="right">6</td>
+    <td align="right">9.43</td>
+    <td align="right">56.60</td>
+    <td align="right">5.95</td>
+  </tr>
+  <tr valign="top">
+    <td align="left">SELECT count(*) FROM billing.invoices WHERE issued_on &gt; current_date - $1</td>
+    <td align="right">6</td>
+    <td align="right">0.61</td>
+    <td align="right">3.68</td>
+    <td align="right">0.39</td>
+  </tr>
+  <tr valign="top">
+    <td align="left">SELECT p.method, sum(i.amount_cents) FROM billing.payments p JOIN billing.invoices i ON i.id = p.invoice_id GROUP BY p.method</td>
+    <td align="right">6</td>
+    <td align="right">2.66</td>
+    <td align="right">15.96</td>
+    <td align="right">1.68</td>
+  </tr>
+  <tr valign="top">
+    <td align="left">SELECT c.country, count(*) FROM sales.customers c JOIN sales.orders o ON o.customer_id = c.id GROUP BY c.country ORDER BY 2 DESC</td>
+    <td align="right">6</td>
+    <td align="right">2.59</td>
+    <td align="right">15.51</td>
+    <td align="right">1.63</td>
+  </tr>
+  <tr valign="top">
+    <td align="left">select count(*)||$1 from pg_stat_statements</td>
+    <td align="right">2</td>
+    <td align="right">0.15</td>
+    <td align="right">0.30</td>
+    <td align="right">0.03</td>
+  </tr>
+  <tr valign="top">
+    <td align="left">INSERT INTO billing.invoices (order_id, amount_cents) SELECT $1+(g%$2), (g*$3)%$4 FROM generate_series($5,$6) g</td>
+    <td align="right">1</td>
+    <td align="right">49.68</td>
+    <td align="right">49.68</td>
+    <td align="right">5.23</td>
+  </tr>
+</table>
+
+<h2 id="heavy" data-i18n="h2_heavy">6. Requetes Lourdes (Temps total)</h2>
+<p data-i18n="p_heavy">Les temps d&apos;execution absolus les plus longs.</p>
+<table border="1" class="table-container">
+  <tr>
+    <th align="center">Requete (Cliquer)</th>
+    <th align="center">Appels</th>
+    <th align="center">Total Time (ms)</th>
+    <th align="center">Moyenne (ms)</th>
+    <th align="center">Lignes Totales</th>
+  </tr>
+  <tr valign="top">
+    <td align="left">INSERT INTO sales.order_items (order_id, sku, qty, unit_cents)<br />
+  SELECT $1+(g%$2), $3||(g%$4), $5+(g%$6), (g*$7)%$8 FROM generate_series($9,$10) g</td>
+    <td align="right">1</td>
+    <td align="right">200.91</td>
+    <td align="right">200.91</td>
+    <td align="right">24000</td>
+  </tr>
+  <tr valign="top">
+    <td align="left">ANALYZE</td>
+    <td align="right">1</td>
+    <td align="right">156.97</td>
+    <td align="right">156.97</td>
+    <td align="right">0</td>
+  </tr>
+  <tr valign="top">
+    <td align="left">INSERT INTO sales.orders (customer_id, status, total_cents)<br />
+  SELECT $1+(g%$2), (ARRAY[$3,$4,$5,$6])[$7+(g%$8)], (g*$9)%$10 FROM generate_series($11,$12) g</td>
+    <td align="right">1</td>
+    <td align="right">107.37</td>
+    <td align="right">107.37</td>
+    <td align="right">8000</td>
+  </tr>
+  <tr valign="top">
+    <td align="left">CREATE DATABASE &quot;shopdb&quot;</td>
+    <td align="right">1</td>
+    <td align="right">81.48</td>
+    <td align="right">81.48</td>
+    <td align="right">0</td>
+  </tr>
+  <tr valign="top">
+    <td align="left">SELECT * FROM sales.v_order_totals ORDER BY total_cents DESC LIMIT $1</td>
+    <td align="right">6</td>
+    <td align="right">77.05</td>
+    <td align="right">12.84</td>
+    <td align="right">120</td>
+  </tr>
+  <tr valign="top">
+    <td align="left">SELECT o.status, avg(oi.unit_cents) FROM sales.orders o JOIN sales.order_items oi ON oi.order_id=o.id GROUP BY o.status</td>
+    <td align="right">6</td>
+    <td align="right">56.60</td>
+    <td align="right">9.43</td>
+    <td align="right">24</td>
+  </tr>
+  <tr valign="top">
+    <td align="left">INSERT INTO billing.invoices (order_id, amount_cents) SELECT $1+(g%$2), (g*$3)%$4 FROM generate_series($5,$6) g</td>
+    <td align="right">1</td>
+    <td align="right">49.68</td>
+    <td align="right">49.68</td>
+    <td align="right">6000</td>
+  </tr>
+  <tr valign="top">
+    <td align="left">INSERT INTO billing.payments (invoice_id, method, captured_at)<br />
+  SELECT $1+(g%$2), (ARRAY[$3,$4,$5])[$6+(g%$7)], now() - (g||$8)::interval FROM generate_series($9,$10) g</td>
+    <td align="right">1</td>
+    <td align="right">41.97</td>
+    <td align="right">41.97</td>
+    <td align="right">5000</td>
+  </tr>
+  <tr valign="top">
+    <td align="left">WITH<br />
+-- ---------------------------------------------------------------------------<br />
+meta AS (<br />
+  SELECT json_build_object(<br />
+    $1,               $2,<br />
+    $3,            $4,<br />
+    $5,       now(),<br />
+    $6,         version(),<br />
+    $7,     current_setting($8)::int,<br />
+    $9,           current_database(),<br />
+    $10,    pg_encoding_to_char(<br />
+                            (SELECT encoding FROM pg_database WHERE datname = current_database())),<br />
+    $11,         current_setting($12)::int,<br />
+    $13, current_setting($14)::bigint<br />
+  ) AS v<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- databases: include XID wraparound age for v_wrap detection<br />
+databases AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $15,              datname,<br />
+    $16,             pg_get_userbyid(datdba),<br />
+    $17,          pg_encoding_to_char(encoding),<br />
+    $18,           datcollate,<br />
+    $19,             datctype,<br />
+    $20,        pg_database_size(datname),<br />
+    $21,         datconnlimit,<br />
+    $22,       datistemplate,<br />
+    $23,        datallowconn,<br />
+    $24,      datfrozenxid::text,<br />
+    $25,           age(datfrozenxid),<br />
+    $26,       round($27 * age(datfrozenxid)<br />
+                           / NULLIF(current_setting($28)::bigint, $29), $30)<br />
+  ) ORDER BY datname) AS v<br />
+  FROM pg_database<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+schemas AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $31,  nspname,<br />
+    $32, pg_get_userbyid(nspowner)<br />
+  ) ORDER BY nspname) AS v<br />
+  FROM pg_namespace<br />
+  WHERE nspname NOT LIKE $33<br />
+    AND nspname NOT LIKE $34<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+extensions AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $35,         extname,<br />
+    $36,      extversion,<br />
+    $37,       n.nspname,<br />
+    $38,  extrelocatable<br />
+  ) ORDER BY extname) AS v<br />
+  FROM pg_extension e<br />
+  JOIN pg_namespace n ON n.oid = e.extnamespace<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+tablespaces AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $39,       spcname,<br />
+    $40,      pg_get_userbyid(spcowner),<br />
+    $41,   pg_tablespace_location(oid),<br />
+    $42, pg_tablespace_size(oid)<br />
+  ) ORDER BY spcname) AS v<br />
+  FROM pg_tablespace<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- tables: include relpages + relfrozenxid (needed for bloat formula + wraparound)<br />
+tables AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $43,          t.schemaname,<br />
+    $44,           t.tablename,<br />
+    $45,           t.tableowner,<br />
+    $46,      t.tablespace,<br />
+    $47,     pg_total_relation_size(t.schemaname || $48 || quote_ident(t.tablename)),<br />
+    $49,     pg_relation_size(t.schemaname || $50 || quote_ident(t.tablename)),<br />
+    $51,     pg_indexes_size(t.schemaname || $52 || quote_ident(t.tablename)),<br />
+    $53,     COALESCE(<br />
+                         pg_total_relation_size(t.schemaname || $54 || quote_ident(t.tablename))<br />
+                         - pg_relation_size(t.schemaname || $55 || quote_ident(t.tablename))<br />
+                         - pg_indexes_size(t.schemaname || $56 || quote_ident(t.tablename)), $57),<br />
+    $58,    c.reltuples::bigint,<br />
+    $59,        c.relpages,<br />
+    $60,   c.relallvisible,<br />
+    $61,    c.relfrozenxid::text,<br />
+    $62,   age(c.relfrozenxid),<br />
+    $63,         c.relkind::text,<br />
+    $64,  c.relpersistence::text,<br />
+    $65,  c.relhastriggers,<br />
+    $66,     c.relhasindex,<br />
+    $67,      (SELECT (regexp_match(c.reloptions::text, $68))[$69]::int)<br />
+  ) ORDER BY t.schemaname, t.tablename) AS v<br />
+  FROM pg_tables t<br />
+  JOIN pg_class c      ON c.relname = t.tablename<br />
+  JOIN pg_namespace n  ON n.oid = c.relnamespace AND n.nspname = t.schemaname<br />
+  WHERE t.schemaname NOT IN ($70, $71, $72)<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- columns: full type info + alignment/length for padding waste analysis<br />
+columns AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $73,        n.nspname,<br />
+    $74,         c.relname,<br />
+    $75,        a.attname,<br />
+    $76,      a.attnum,<br />
+    $77,     t.typname,<br />
+    $78, t.typcategory::text,<br />
+    $79,        a.attlen,        -- -1 = variable length<br />
+    $80,      a.attalign::text, -- c=1B, s=2B, i=4B, d=8B<br />
+    $81,    a.attstorage::text, -- p=plain, e=external, m=main, x=extended<br />
+    $82,    a.attnotnull,<br />
+    $83,      a.attndims,<br />
+    $84,     a.atthasdef,<br />
+    $85,   a.attidentity::text,<br />
+    $86,  a.attgenerated::text,<br />
+    $87,     a.atttypmod,     -- type modifier (e.g. varchar(N))<br />
+    $88,      CASE a.attlen<br />
+                       WHEN $89 THEN $90<br />
+                       ELSE a.attlen::text || $91<br />
+                     END,<br />
+    $92,   CASE a.attalign<br />
+                       WHEN $93 THEN $94<br />
+                       WHEN $95 THEN $96<br />
+                       WHEN $97 THEN $98<br />
+                       WHEN $99 THEN $100<br />
+                       ELSE $101<br />
+                     END<br />
+  ) ORDER BY n.nspname, c.relname, a.attnum) AS v<br />
+  FROM pg_attribute a<br />
+  JOIN pg_class c     ON c.oid = a.attrelid<br />
+  JOIN pg_namespace n ON n.oid = c.relnamespace<br />
+  JOIN pg_type t      ON t.oid = a.atttypid<br />
+  WHERE a.attnum &gt; $102<br />
+    AND NOT a.attisdropped<br />
+    AND n.nspname NOT IN ($103, $104, $105)<br />
+    AND c.relkind IN ($106, $107)  -- regular tables and partitioned tables only<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+indexes AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $108,       schemaname,<br />
+    $109,        tablename,<br />
+    $110,   indexname,<br />
+    $111,   tablespace,<br />
+    $112,    indexdef,<br />
+    $113,   pg_relation_size(schemaname || $114 || quote_ident(indexname)),<br />
+    $115,    ix.indisunique,<br />
+    $116,   ix.indisprimary,<br />
+    $117, ix.indisexclusion,<br />
+    $118,     ix.indisvalid,<br />
+    $119,     ix.indisready,<br />
+    $120,     array_length(ix.indkey, $121),<br />
+    $122,       ix.indkey::int2[]::text,  -- column positions (for dup detection)<br />
+    $123,     ix.indclass::int4[]::text,<br />
+    $124,    ix.indoption::int2[]::text,<br />
+    $125,    ix.indexprs IS NOT NULL,<br />
+    $126,     ix.indpred IS NOT NULL<br />
+  ) ORDER BY schemaname, tablename, indexname) AS v<br />
+  FROM pg_indexes i<br />
+  JOIN pg_class c    ON c.relname = indexname<br />
+  JOIN pg_index ix   ON ix.indexrelid = c.oid<br />
+  JOIN pg_namespace n ON n.oid = c.relnamespace<br />
+  WHERE schemaname NOT IN ($127, $128)<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- constraints: include conkey (column positions) for unindexed FK detection<br />
+constraints AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $129,        n.nspname,<br />
+    $130,         cl.relname,<br />
+    $131,          conname,<br />
+    $132,          CASE contype<br />
+                       WHEN $133 THEN $134<br />
+                       WHEN $135 THEN $136<br />
+                       WHEN $137 THEN $138<br />
+                       WHEN $139 THEN $140<br />
+                       WHEN $141 THEN $142<br />
+                       WHEN $143 THEN $144<br />
+                       ELSE contype::text END,<br />
+    $145, condeferrable,<br />
+    $146,   condeferred,<br />
+    $147,  convalidated,<br />
+    $148,        conkey::text,   -- local column positions<br />
+    $149,       confkey::text,  -- referenced column positions<br />
+    $150,      array_length(conkey, $151),<br />
+    $152,     fn.nspname,<br />
+    $153,      fc.relname<br />
+  ) ORDER BY n.nspname, cl.relname, conname) AS v<br />
+  FROM pg_constraint co<br />
+  JOIN pg_class     cl ON cl.oid = co.conrelid<br />
+  JOIN pg_namespace n  ON n.oid = cl.relnamespace<br />
+  LEFT JOIN pg_class     fc ON fc.oid = co.confrelid<br />
+  LEFT JOIN pg_namespace fn ON fn.oid = fc.relnamespace<br />
+  WHERE n.nspname NOT IN ($154, $155)<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- unindexed_fks: pre-computed (mirrors v_fk_unindexed in ultimate_report)<br />
+unindexed_fks AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $156,  n1.nspname,<br />
+    $157,   c1.relname,<br />
+    $158,  a1.attname,<br />
+    $159, t.conname,<br />
+    $160, fn.nspname || $161 || fc.relname<br />
+  ) ORDER BY n1.nspname, c1.relname) AS v<br />
+  FROM pg_constraint t<br />
+  JOIN pg_attribute  a1 ON a1.attrelid = t.conrelid AND a1.attnum = t.conkey[$162]<br />
+  JOIN pg_class      c1 ON c1.oid = t.conrelid<br />
+  JOIN pg_namespace  n1 ON n1.oid = c1.relnamespace<br />
+  LEFT JOIN pg_class     fc ON fc.oid = t.confrelid<br />
+  LEFT JOIN pg_namespace fn ON fn.oid = fc.relnamespace<br />
+  WHERE t.contype = $163<br />
+    AND n1.nspname NOT IN ($164, $165)<br />
+    AND NOT EXISTS (<br />
+      SELECT $166 FROM pg_index i<br />
+      WHERE i.indrelid = t.conrelid<br />
+        AND i.indkey[$167] = t.conkey[$168]<br />
+    )<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+sequences AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $169,        n.nspname,<br />
+    $170,          c.relname,<br />
+    $171,     t.typname,<br />
+    $172,         s.seqstart,<br />
+    $173,     s.seqincrement,<br />
+    $174,           s.seqmin,<br />
+    $175,           s.seqmax,<br />
+    $176,         s.seqcache,<br />
+    $177,         s.seqcycle,<br />
+    $178,    ps.last_value,<br />
+    $179, CASE WHEN s.seqmax &gt; s.seqmin<br />
+                       THEN round($180 * (<br />
+                         COALESCE(ps.last_value, s.seqmin) - s.seqmin<br />
+                       ) / NULLIF(s.seqmax - s.seqmin, $181), $182)<br />
+                     END<br />
+  ) ORDER BY n.nspname, c.relname) AS v<br />
+  FROM pg_sequence s<br />
+  JOIN pg_class c      ON c.oid = s.seqrelid<br />
+  JOIN pg_namespace n  ON n.oid = c.relnamespace<br />
+  JOIN pg_type t       ON t.oid = s.seqtypid<br />
+  LEFT JOIN pg_sequences ps ON ps.schemaname = n.nspname AND ps.sequencename = c.relname<br />
+  WHERE n.nspname NOT IN ($183, $184)<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+views AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $185,         table_schema,<br />
+    $186,           table_name,<br />
+    $187,   is_updatable = $188,<br />
+    $189,  is_insertable_into = $190<br />
+  ) ORDER BY table_schema, table_name) AS v<br />
+  FROM information_schema.views<br />
+  WHERE table_schema NOT IN ($191, $192)<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+functions_summary AS (<br />
+  SELECT json_build_object(<br />
+    $193,     count(*),<br />
+    $194, json_object_agg(lanname, cnt)<br />
+  ) AS v<br />
+  FROM (<br />
+    SELECT l.lanname, count(*) AS cnt<br />
+    FROM pg_proc p<br />
+    JOIN pg_language l  ON l.oid = p.prolang<br />
+    JOIN pg_namespace n ON n.oid = p.pronamespace<br />
+    WHERE n.nspname NOT IN ($195, $196)<br />
+    GROUP BY l.lanname<br />
+  ) sub<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- roles: include password hash TYPE (not value) for security audit<br />
+roles AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $197,         rolname,<br />
+    $198,    rolsuper,<br />
+    $199,      rolinherit,<br />
+    $200,   rolcreaterole,<br />
+    $201,     rolcreatedb,<br />
+    $202,        rolcanlogin,<br />
+    $203,  rolreplication,<br />
+    $204,    rolbypassrls,<br />
+    $205,    rolconnlimit,<br />
+    $206,  rolvaliduntil,<br />
+    $207, rolpassword IS NOT NULL,<br />
+    $208,     CASE<br />
+                      WHEN rolpassword IS NULL       THEN $209<br />
+                      WHEN rolpassword LIKE $210 THEN $211<br />
+                      WHEN rolpassword LIKE $212   THEN $213<br />
+                      ELSE $214<br />
+                    END,<br />
+    $215,   CASE<br />
+                      WHEN rolsuper OR rolcreaterole OR rolreplication THEN $216<br />
+                      WHEN rolpassword IS NULL AND rolcanlogin THEN $217<br />
+                      ELSE $218<br />
+                    END<br />
+  ) ORDER BY rolname) AS v<br />
+  FROM pg_roles<br />
+  WHERE rolname NOT LIKE $219<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- settings: complete set used by audit checks<br />
+settings_key AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $220,     name,<br />
+    $221,  setting,<br />
+    $222,     unit,<br />
+    $223,   source,<br />
+    $224,  min_val,<br />
+    $225,  max_val<br />
+  ) ORDER BY name) AS v<br />
+  FROM pg_settings<br />
+  WHERE name IN (<br />
+    $226,$227,$228,$229,<br />
+    $230,$231,$232,$233,<br />
+    $234,$235,<br />
+    $236,$237,$238,<br />
+    $239,$240,$241,<br />
+    $242,$243,$244,<br />
+    $245,$246,$247,$248,<br />
+    $249,$250,$251,<br />
+    $252,$253,$254,<br />
+    $255,$256,$257,<br />
+    $258,$259,$260,$261,<br />
+    $262,$263,$264,<br />
+    $265,$266,$267,<br />
+    $268,$269<br />
+  )<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- pg_stats: planner column statistics — used by bloat formula in ultimate_report<br />
+-- (null_frac, avg_width per column; NOT actual data values)<br />
+planner_stats AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $270,        schemaname,<br />
+    $271,         tablename,<br />
+    $272,        attname,<br />
+    $273,     inherited,<br />
+    $274,     round(null_frac::numeric, $275),<br />
+    $276,     avg_width,<br />
+    $277,    n_distinct,<br />
+    $278,   round(correlation::numeric, $279),<br />
+    $280, array_length(most_common_freqs, $281),<br />
+    $282,  array_length(histogram_bounds, $283)<br />
+  ) ORDER BY schemaname, tablename, attname) AS v<br />
+  FROM pg_stats<br />
+  WHERE schemaname NOT IN ($284, $285)<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- bloat_pre_computed: same formula as v_bloat in ultimate_report.sql<br />
+bloat_computed AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $286,      schemaname,<br />
+    $287,       tablename,<br />
+    $288,    relpages,<br />
+    $289,        otta,<br />
+    $290,      round((CASE WHEN otta = $291 THEN $292<br />
+                          ELSE relpages::float / NULLIF(otta, $293) END)::numeric, $294),<br />
+    $295,GREATEST(relpages - otta, $296),<br />
+    $297, GREATEST(relpages - otta, $298) * current_setting($299)::int<br />
+  ) ORDER BY GREATEST(relpages - otta, $300) DESC NULLS LAST) AS v<br />
+  FROM (<br />
+    SELECT schemaname, tablename, cc.relpages,<br />
+      CEIL((cc.reltuples * $301) / NULLIF(current_setting($302)::int - $303, $304))::bigint AS otta<br />
+    FROM pg_stats s<br />
+    JOIN pg_class cc     ON cc.relname = s.tablename<br />
+    JOIN pg_namespace nn ON cc.relnamespace = nn.oid AND nn.nspname = s.schemaname<br />
+    WHERE s.schemaname NOT IN ($305, $306)<br />
+    GROUP BY schemaname, tablename, cc.relpages, cc.reltuples<br />
+  ) foo<br />
+  WHERE relpages &gt; otta<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- available extensions (for extension audit)<br />
+available_extensions AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $307,              name,<br />
+    $308,   default_version,<br />
+    $309, installed_version,<br />
+    $310,           comment<br />
+  ) ORDER BY name) AS v<br />
+  FROM pg_available_extensions<br />
+  WHERE installed_version IS NOT NULL<br />
+     OR name IN ($311,$312,$313,<br />
+                 $314,$315,$316,$317,$318)<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- functions: per-function / procedure detail<br />
+functions AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $319,           n.nspname,<br />
+    $320,             p.proname,<br />
+    $321,         l.lanname,<br />
+    $322,             CASE p.prokind<br />
+                          WHEN $323 THEN $324<br />
+                          WHEN $325 THEN $326<br />
+                          WHEN $327 THEN $328<br />
+                          WHEN $329 THEN $330<br />
+                          ELSE p.prokind::text END,<br />
+    $331,      CASE WHEN p.prokind = $332 THEN $333<br />
+                             ELSE pg_get_function_result(p.oid) END,<br />
+    $334,        pg_get_function_arguments(p.oid),<br />
+    $335,       CASE p.provolatile<br />
+                          WHEN $336 THEN $337<br />
+                          WHEN $338 THEN $339<br />
+                          WHEN $340 THEN $341 END,<br />
+    $342, p.prosecdef,<br />
+    $343,           p.proisstrict,<br />
+    $344,         CASE p.proparallel<br />
+                          WHEN $345 THEN $346<br />
+                          WHEN $347 THEN $348<br />
+                          WHEN $349 THEN $350 END,<br />
+    $351,             p.procost,<br />
+    $352,             p.prorows,<br />
+    $353,       CASE WHEN l.lanname NOT IN ($354, $355)<br />
+                               THEN pg_get_functiondef(p.oid)<br />
+                             ELSE $356 END<br />
+  ) ORDER BY n.nspname, p.proname, pg_get_function_arguments(p.oid)) AS v<br />
+  FROM pg_proc p<br />
+  JOIN pg_namespace n ON n.oid = p.pronamespace<br />
+  JOIN pg_language l  ON l.oid = p.prolang<br />
+  WHERE n.nspname NOT IN ($357, $358)<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- triggers: per-trigger detail<br />
+triggers AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $359,           n.nspname,<br />
+    $360,            c.relname,<br />
+    $361,     t.tgname,<br />
+    $362,          t.tgenabled &lt;&gt; $363,<br />
+    $364,           CASE<br />
+                          WHEN (t.tgtype &amp;  $365) &lt;&gt; $366 THEN $367<br />
+                          WHEN (t.tgtype &amp; $368) &lt;&gt; $369 THEN $370<br />
+                          ELSE $371 END,<br />
+    $372,           array_remove(ARRAY[<br />
+                          CASE WHEN (t.tgtype &amp;  $373) &lt;&gt; $374 THEN $375   END,<br />
+                          CASE WHEN (t.tgtype &amp;  $376) &lt;&gt; $377 THEN $378   END,<br />
+                          CASE WHEN (t.tgtype &amp; $379) &lt;&gt; $380 THEN $381   END,<br />
+                          CASE WHEN (t.tgtype &amp; $382) &lt;&gt; $383 THEN $384 END<br />
+                        ], $385),<br />
+    $386,      CASE WHEN (t.tgtype &amp; $387) &lt;&gt; $388 THEN $389 ELSE $390 END,<br />
+    $391,  fn.nspname,<br />
+    $392,    p.proname,<br />
+    $393,        pg_get_expr(t.tgqual, t.tgrelid)<br />
+  ) ORDER BY n.nspname, c.relname, t.tgname) AS v<br />
+  FROM pg_trigger t<br />
+  JOIN pg_class c       ON c.oid = t.tgrelid<br />
+  JOIN pg_namespace n   ON n.oid = c.relnamespace<br />
+  JOIN pg_proc p        ON p.oid = t.tgfoid<br />
+  JOIN pg_namespace fn  ON fn.oid = p.pronamespace<br />
+  WHERE NOT t.tgisinternal<br />
+    AND n.nspname NOT IN ($394, $395)<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- mat_views: materialized views<br />
+mat_views AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $396,       schemaname,<br />
+    $397,         matviewname,<br />
+    $398,        matviewowner,<br />
+    $399,   tablespace,<br />
+    $400, ispopulated,<br />
+    $401,   definition<br />
+  ) ORDER BY schemaname, matviewname) AS v<br />
+  FROM pg_matviews<br />
+  WHERE schemaname NOT IN ($402, $403)<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- policies: row-level security policies<br />
+policies AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $404,       n.nspname,<br />
+    $405,        c.relname,<br />
+    $406,         p.polname,<br />
+    $407,   p.polpermissive,<br />
+    $408,        CASE<br />
+                      WHEN p.polroles = $409::oid[] THEN ARRAY[$410]<br />
+                      ELSE ARRAY(SELECT rolname FROM pg_roles r<br />
+                                 WHERE r.oid = ANY(p.polroles))<br />
+                    END,<br />
+    $411,          CASE p.polcmd<br />
+                      WHEN $412 THEN $413<br />
+                      WHEN $414 THEN $415<br />
+                      WHEN $416 THEN $417<br />
+                      WHEN $418 THEN $419<br />
+                      WHEN $420 THEN $421<br />
+                    END,<br />
+    $422,         pg_get_expr(p.polqual, p.polrelid),<br />
+    $423,   pg_get_expr(p.polwithcheck, p.polrelid),<br />
+    $424,  c.relrowsecurity,<br />
+    $425,   c.relforcerowsecurity<br />
+  ) ORDER BY n.nspname, c.relname, p.polname) AS v<br />
+  FROM pg_policy p<br />
+  JOIN pg_class c     ON c.oid = p.polrelid<br />
+  JOIN pg_namespace n ON n.oid = c.relnamespace<br />
+  WHERE n.nspname NOT IN ($426, $427)<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- rules: rewrite rules on tables/views (excluding default view return rules)<br />
+-- pg_rules only has schemaname/tablename/rulename/definition; event and<br />
+-- do_instead come from pg_rewrite (ev_type, is_instead).<br />
+rules AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $428,     n.nspname,<br />
+    $429,      c.relname,<br />
+    $430,  r.rulename,<br />
+    $431,      CASE r.ev_type<br />
+                    WHEN $432 THEN $433<br />
+                    WHEN $434 THEN $435<br />
+                    WHEN $436 THEN $437<br />
+                    WHEN $438 THEN $439<br />
+                    ELSE r.ev_type::text END,<br />
+    $440, r.is_instead,<br />
+    $441, pg_get_ruledef(r.oid)<br />
+  ) ORDER BY n.nspname, c.relname, r.rulename) AS v<br />
+  FROM pg_rewrite r<br />
+  JOIN pg_class c     ON c.oid = r.ev_class<br />
+  JOIN pg_namespace n ON n.oid = c.relnamespace<br />
+  WHERE n.nspname NOT IN ($442, $443)<br />
+    AND r.rulename &lt;&gt; $444<br />
+)<br />
+-- ---------------------------------------------------------------------------<br />
+SELECT json_build_object(<br />
+  $445,               (SELECT v FROM meta),<br />
+  $446,           (SELECT v FROM databases),<br />
+  $447,             (SELECT v FROM schemas),<br />
+  $448,          (SELECT v FROM extensions),<br />
+  $449,(SELECT v FROM available_extensions),<br />
+  $450,         (SELECT v FROM tablespaces),<br />
+  $451,              (SELECT v FROM tables),<br />
+  $452,             (SELECT v FROM columns),<br />
+  $453,             (SELECT v FROM indexes),<br />
+  $454,         (SELECT v FROM constraints),<br />
+  $455,       (SELECT v FROM unindexed_fks),<br />
+  $456,           (SELECT v FROM sequences),<br />
+  $457,               (SELECT v FROM views),<br />
+  $458,   (SELECT v FROM functions_summary),<br />
+  $459,               (SELECT v FROM roles),<br />
+  $460,        (SELECT v FROM settings_key),<br />
+  $461,       (SELECT v FROM planner_stats),<br />
+  $462,      (SELECT v FROM bloat_computed),<br />
+  $463,           (SELECT v FROM functions),<br />
+  $464,            (SELECT v FROM triggers),<br />
+  $465,           (SELECT v FROM mat_views),<br />
+  $466,            (SELECT v FROM policies),<br />
+  $467,               (SELECT v FROM rules)<br />
+)</td>
+    <td align="right">1</td>
+    <td align="right">33.29</td>
+    <td align="right">33.29</td>
+    <td align="right">1</td>
+  </tr>
+  <tr valign="top">
+    <td align="left">WITH<br />
+-- ---------------------------------------------------------------------------<br />
+meta AS (<br />
+  SELECT json_build_object(<br />
+    $1,               $2,<br />
+    $3,            $4,<br />
+    $5,       now(),<br />
+    $6,         version(),<br />
+    $7,     current_setting($8)::int,<br />
+    $9,           current_database(),<br />
+    $10,    pg_encoding_to_char(<br />
+                            (SELECT encoding FROM pg_database WHERE datname = current_database())),<br />
+    $11,         current_setting($12)::int,<br />
+    $13, current_setting($14)::bigint<br />
+  ) AS v<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- databases: include XID wraparound age for v_wrap detection<br />
+databases AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $15,              datname,<br />
+    $16,             pg_get_userbyid(datdba),<br />
+    $17,          pg_encoding_to_char(encoding),<br />
+    $18,           datcollate,<br />
+    $19,             datctype,<br />
+    $20,        pg_database_size(datname),<br />
+    $21,         datconnlimit,<br />
+    $22,       datistemplate,<br />
+    $23,        datallowconn,<br />
+    $24,      datfrozenxid::text,<br />
+    $25,           age(datfrozenxid),<br />
+    $26,       round($27 * age(datfrozenxid)<br />
+                           / NULLIF(current_setting($28)::bigint, $29), $30)<br />
+  ) ORDER BY datname) AS v<br />
+  FROM pg_database<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+schemas AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $31,  nspname,<br />
+    $32, pg_get_userbyid(nspowner)<br />
+  ) ORDER BY nspname) AS v<br />
+  FROM pg_namespace<br />
+  WHERE nspname NOT LIKE $33<br />
+    AND nspname NOT LIKE $34<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+extensions AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $35,         extname,<br />
+    $36,      extversion,<br />
+    $37,       n.nspname,<br />
+    $38,  extrelocatable<br />
+  ) ORDER BY extname) AS v<br />
+  FROM pg_extension e<br />
+  JOIN pg_namespace n ON n.oid = e.extnamespace<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+tablespaces AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $39,       spcname,<br />
+    $40,      pg_get_userbyid(spcowner),<br />
+    $41,   pg_tablespace_location(oid),<br />
+    $42, pg_tablespace_size(oid)<br />
+  ) ORDER BY spcname) AS v<br />
+  FROM pg_tablespace<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- tables: include relpages + relfrozenxid (needed for bloat formula + wraparound)<br />
+tables AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $43,          t.schemaname,<br />
+    $44,           t.tablename,<br />
+    $45,           t.tableowner,<br />
+    $46,      t.tablespace,<br />
+    $47,     pg_total_relation_size(t.schemaname || $48 || quote_ident(t.tablename)),<br />
+    $49,     pg_relation_size(t.schemaname || $50 || quote_ident(t.tablename)),<br />
+    $51,     pg_indexes_size(t.schemaname || $52 || quote_ident(t.tablename)),<br />
+    $53,     COALESCE(<br />
+                         pg_total_relation_size(t.schemaname || $54 || quote_ident(t.tablename))<br />
+                         - pg_relation_size(t.schemaname || $55 || quote_ident(t.tablename))<br />
+                         - pg_indexes_size(t.schemaname || $56 || quote_ident(t.tablename)), $57),<br />
+    $58,    c.reltuples::bigint,<br />
+    $59,        c.relpages,<br />
+    $60,   c.relallvisible,<br />
+    $61,    c.relfrozenxid::text,<br />
+    $62,   age(c.relfrozenxid),<br />
+    $63,         c.relkind::text,<br />
+    $64,  c.relpersistence::text,<br />
+    $65,  c.relhastriggers,<br />
+    $66,     c.relhasindex,<br />
+    $67,      (SELECT (regexp_match(c.reloptions::text, $68))[$69]::int)<br />
+  ) ORDER BY t.schemaname, t.tablename) AS v<br />
+  FROM pg_tables t<br />
+  JOIN pg_class c      ON c.relname = t.tablename<br />
+  JOIN pg_namespace n  ON n.oid = c.relnamespace AND n.nspname = t.schemaname<br />
+  WHERE t.schemaname NOT IN ($70, $71, $72)<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- columns: full type info + alignment/length for padding waste analysis<br />
+columns AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $73,        n.nspname,<br />
+    $74,         c.relname,<br />
+    $75,        a.attname,<br />
+    $76,      a.attnum,<br />
+    $77,     t.typname,<br />
+    $78, t.typcategory::text,<br />
+    $79,        a.attlen,        -- -1 = variable length<br />
+    $80,      a.attalign::text, -- c=1B, s=2B, i=4B, d=8B<br />
+    $81,    a.attstorage::text, -- p=plain, e=external, m=main, x=extended<br />
+    $82,    a.attnotnull,<br />
+    $83,      a.attndims,<br />
+    $84,     a.atthasdef,<br />
+    $85,   a.attidentity::text,<br />
+    $86,  a.attgenerated::text,<br />
+    $87,     a.atttypmod,     -- type modifier (e.g. varchar(N))<br />
+    $88,      CASE a.attlen<br />
+                       WHEN $89 THEN $90<br />
+                       ELSE a.attlen::text || $91<br />
+                     END,<br />
+    $92,   CASE a.attalign<br />
+                       WHEN $93 THEN $94<br />
+                       WHEN $95 THEN $96<br />
+                       WHEN $97 THEN $98<br />
+                       WHEN $99 THEN $100<br />
+                       ELSE $101<br />
+                     END<br />
+  ) ORDER BY n.nspname, c.relname, a.attnum) AS v<br />
+  FROM pg_attribute a<br />
+  JOIN pg_class c     ON c.oid = a.attrelid<br />
+  JOIN pg_namespace n ON n.oid = c.relnamespace<br />
+  JOIN pg_type t      ON t.oid = a.atttypid<br />
+  WHERE a.attnum &gt; $102<br />
+    AND NOT a.attisdropped<br />
+    AND n.nspname NOT IN ($103, $104, $105)<br />
+    AND c.relkind IN ($106, $107)  -- regular tables and partitioned tables only<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+indexes AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $108,       schemaname,<br />
+    $109,        tablename,<br />
+    $110,   indexname,<br />
+    $111,   tablespace,<br />
+    $112,    indexdef,<br />
+    $113,   pg_relation_size(schemaname || $114 || quote_ident(indexname)),<br />
+    $115,    ix.indisunique,<br />
+    $116,   ix.indisprimary,<br />
+    $117, ix.indisexclusion,<br />
+    $118,     ix.indisvalid,<br />
+    $119,     ix.indisready,<br />
+    $120,     array_length(ix.indkey, $121),<br />
+    $122,       ix.indkey::int2[]::text,  -- column positions (for dup detection)<br />
+    $123,     ix.indclass::int4[]::text,<br />
+    $124,    ix.indoption::int2[]::text,<br />
+    $125,    ix.indexprs IS NOT NULL,<br />
+    $126,     ix.indpred IS NOT NULL<br />
+  ) ORDER BY schemaname, tablename, indexname) AS v<br />
+  FROM pg_indexes i<br />
+  JOIN pg_class c    ON c.relname = indexname<br />
+  JOIN pg_index ix   ON ix.indexrelid = c.oid<br />
+  JOIN pg_namespace n ON n.oid = c.relnamespace<br />
+  WHERE schemaname NOT IN ($127, $128)<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- constraints: include conkey (column positions) for unindexed FK detection<br />
+constraints AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $129,        n.nspname,<br />
+    $130,         cl.relname,<br />
+    $131,          conname,<br />
+    $132,          CASE contype<br />
+                       WHEN $133 THEN $134<br />
+                       WHEN $135 THEN $136<br />
+                       WHEN $137 THEN $138<br />
+                       WHEN $139 THEN $140<br />
+                       WHEN $141 THEN $142<br />
+                       WHEN $143 THEN $144<br />
+                       ELSE contype::text END,<br />
+    $145, condeferrable,<br />
+    $146,   condeferred,<br />
+    $147,  convalidated,<br />
+    $148,        conkey::text,   -- local column positions<br />
+    $149,       confkey::text,  -- referenced column positions<br />
+    $150,      array_length(conkey, $151),<br />
+    $152,     fn.nspname,<br />
+    $153,      fc.relname<br />
+  ) ORDER BY n.nspname, cl.relname, conname) AS v<br />
+  FROM pg_constraint co<br />
+  JOIN pg_class     cl ON cl.oid = co.conrelid<br />
+  JOIN pg_namespace n  ON n.oid = cl.relnamespace<br />
+  LEFT JOIN pg_class     fc ON fc.oid = co.confrelid<br />
+  LEFT JOIN pg_namespace fn ON fn.oid = fc.relnamespace<br />
+  WHERE n.nspname NOT IN ($154, $155)<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- unindexed_fks: pre-computed (mirrors v_fk_unindexed in ultimate_report)<br />
+unindexed_fks AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $156,  n1.nspname,<br />
+    $157,   c1.relname,<br />
+    $158,  a1.attname,<br />
+    $159, t.conname,<br />
+    $160, fn.nspname || $161 || fc.relname<br />
+  ) ORDER BY n1.nspname, c1.relname) AS v<br />
+  FROM pg_constraint t<br />
+  JOIN pg_attribute  a1 ON a1.attrelid = t.conrelid AND a1.attnum = t.conkey[$162]<br />
+  JOIN pg_class      c1 ON c1.oid = t.conrelid<br />
+  JOIN pg_namespace  n1 ON n1.oid = c1.relnamespace<br />
+  LEFT JOIN pg_class     fc ON fc.oid = t.confrelid<br />
+  LEFT JOIN pg_namespace fn ON fn.oid = fc.relnamespace<br />
+  WHERE t.contype = $163<br />
+    AND n1.nspname NOT IN ($164, $165)<br />
+    AND NOT EXISTS (<br />
+      SELECT $166 FROM pg_index i<br />
+      WHERE i.indrelid = t.conrelid<br />
+        AND i.indkey[$167] = t.conkey[$168]<br />
+    )<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+sequences AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $169,        n.nspname,<br />
+    $170,          c.relname,<br />
+    $171,     t.typname,<br />
+    $172,         s.seqstart,<br />
+    $173,     s.seqincrement,<br />
+    $174,           s.seqmin,<br />
+    $175,           s.seqmax,<br />
+    $176,         s.seqcache,<br />
+    $177,         s.seqcycle,<br />
+    $178,    ps.last_value,<br />
+    $179, CASE WHEN s.seqmax &gt; s.seqmin<br />
+                       THEN round($180 * (<br />
+                         COALESCE(ps.last_value, s.seqmin) - s.seqmin<br />
+                       ) / NULLIF(s.seqmax - s.seqmin, $181), $182)<br />
+                     END<br />
+  ) ORDER BY n.nspname, c.relname) AS v<br />
+  FROM pg_sequence s<br />
+  JOIN pg_class c      ON c.oid = s.seqrelid<br />
+  JOIN pg_namespace n  ON n.oid = c.relnamespace<br />
+  JOIN pg_type t       ON t.oid = s.seqtypid<br />
+  LEFT JOIN pg_sequences ps ON ps.schemaname = n.nspname AND ps.sequencename = c.relname<br />
+  WHERE n.nspname NOT IN ($183, $184)<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+views AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $185,         table_schema,<br />
+    $186,           table_name,<br />
+    $187,   is_updatable = $188,<br />
+    $189,  is_insertable_into = $190<br />
+  ) ORDER BY table_schema, table_name) AS v<br />
+  FROM information_schema.views<br />
+  WHERE table_schema NOT IN ($191, $192)<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+functions_summary AS (<br />
+  SELECT json_build_object(<br />
+    $193,     count(*),<br />
+    $194, json_object_agg(lanname, cnt)<br />
+  ) AS v<br />
+  FROM (<br />
+    SELECT l.lanname, count(*) AS cnt<br />
+    FROM pg_proc p<br />
+    JOIN pg_language l  ON l.oid = p.prolang<br />
+    JOIN pg_namespace n ON n.oid = p.pronamespace<br />
+    WHERE n.nspname NOT IN ($195, $196)<br />
+    GROUP BY l.lanname<br />
+  ) sub<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- roles: include password hash TYPE (not value) for security audit<br />
+roles AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $197,         rolname,<br />
+    $198,    rolsuper,<br />
+    $199,      rolinherit,<br />
+    $200,   rolcreaterole,<br />
+    $201,     rolcreatedb,<br />
+    $202,        rolcanlogin,<br />
+    $203,  rolreplication,<br />
+    $204,    rolbypassrls,<br />
+    $205,    rolconnlimit,<br />
+    $206,  rolvaliduntil,<br />
+    $207, rolpassword IS NOT NULL,<br />
+    $208,     CASE<br />
+                      WHEN rolpassword IS NULL       THEN $209<br />
+                      WHEN rolpassword LIKE $210 THEN $211<br />
+                      WHEN rolpassword LIKE $212   THEN $213<br />
+                      ELSE $214<br />
+                    END,<br />
+    $215,   CASE<br />
+                      WHEN rolsuper OR rolcreaterole OR rolreplication THEN $216<br />
+                      WHEN rolpassword IS NULL AND rolcanlogin THEN $217<br />
+                      ELSE $218<br />
+                    END<br />
+  ) ORDER BY rolname) AS v<br />
+  FROM pg_roles<br />
+  WHERE rolname NOT LIKE $219<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- settings: complete set used by audit checks<br />
+settings_key AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $220,     name,<br />
+    $221,  setting,<br />
+    $222,     unit,<br />
+    $223,   source,<br />
+    $224,  min_val,<br />
+    $225,  max_val<br />
+  ) ORDER BY name) AS v<br />
+  FROM pg_settings<br />
+  WHERE name IN (<br />
+    $226,$227,$228,$229,<br />
+    $230,$231,$232,$233,<br />
+    $234,$235,<br />
+    $236,$237,$238,<br />
+    $239,$240,$241,<br />
+    $242,$243,$244,<br />
+    $245,$246,$247,$248,<br />
+    $249,$250,$251,<br />
+    $252,$253,$254,<br />
+    $255,$256,$257,<br />
+    $258,$259,$260,$261,<br />
+    $262,$263,$264,<br />
+    $265,$266,$267,<br />
+    $268,$269<br />
+  )<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- pg_stats: planner column statistics — used by bloat formula in ultimate_report<br />
+-- (null_frac, avg_width per column; NOT actual data values)<br />
+planner_stats AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $270,        schemaname,<br />
+    $271,         tablename,<br />
+    $272,        attname,<br />
+    $273,     inherited,<br />
+    $274,     round(null_frac::numeric, $275),<br />
+    $276,     avg_width,<br />
+    $277,    n_distinct,<br />
+    $278,   round(correlation::numeric, $279),<br />
+    $280, array_length(most_common_freqs, $281),<br />
+    $282,  array_length(histogram_bounds, $283)<br />
+  ) ORDER BY schemaname, tablename, attname) AS v<br />
+  FROM pg_stats<br />
+  WHERE schemaname NOT IN ($284, $285)<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- bloat_pre_computed: same formula as v_bloat in ultimate_report.sql<br />
+bloat_computed AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $286,      schemaname,<br />
+    $287,       tablename,<br />
+    $288,    relpages,<br />
+    $289,        otta,<br />
+    $290,      round((CASE WHEN otta = $291 THEN $292<br />
+                          ELSE relpages::float / NULLIF(otta, $293) END)::numeric, $294),<br />
+    $295,GREATEST(relpages - otta, $296),<br />
+    $297, GREATEST(relpages - otta, $298) * current_setting($299)::int<br />
+  ) ORDER BY GREATEST(relpages - otta, $300) DESC NULLS LAST) AS v<br />
+  FROM (<br />
+    SELECT schemaname, tablename, cc.relpages,<br />
+      CEIL((cc.reltuples * $301) / NULLIF(current_setting($302)::int - $303, $304))::bigint AS otta<br />
+    FROM pg_stats s<br />
+    JOIN pg_class cc     ON cc.relname = s.tablename<br />
+    JOIN pg_namespace nn ON cc.relnamespace = nn.oid AND nn.nspname = s.schemaname<br />
+    WHERE s.schemaname NOT IN ($305, $306)<br />
+    GROUP BY schemaname, tablename, cc.relpages, cc.reltuples<br />
+  ) foo<br />
+  WHERE relpages &gt; otta<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- available extensions (for extension audit)<br />
+available_extensions AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $307,              name,<br />
+    $308,   default_version,<br />
+    $309, installed_version,<br />
+    $310,           comment<br />
+  ) ORDER BY name) AS v<br />
+  FROM pg_available_extensions<br />
+  WHERE installed_version IS NOT NULL<br />
+     OR name IN ($311,$312,$313,<br />
+                 $314,$315,$316,$317,$318)<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- functions: per-function / procedure detail<br />
+functions AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $319,           n.nspname,<br />
+    $320,             p.proname,<br />
+    $321,         l.lanname,<br />
+    $322,             CASE p.prokind<br />
+                          WHEN $323 THEN $324<br />
+                          WHEN $325 THEN $326<br />
+                          WHEN $327 THEN $328<br />
+                          WHEN $329 THEN $330<br />
+                          ELSE p.prokind::text END,<br />
+    $331,      CASE WHEN p.prokind = $332 THEN $333<br />
+                             ELSE pg_get_function_result(p.oid) END,<br />
+    $334,        pg_get_function_arguments(p.oid),<br />
+    $335,       CASE p.provolatile<br />
+                          WHEN $336 THEN $337<br />
+                          WHEN $338 THEN $339<br />
+                          WHEN $340 THEN $341 END,<br />
+    $342, p.prosecdef,<br />
+    $343,           p.proisstrict,<br />
+    $344,         CASE p.proparallel<br />
+                          WHEN $345 THEN $346<br />
+                          WHEN $347 THEN $348<br />
+                          WHEN $349 THEN $350 END,<br />
+    $351,             p.procost,<br />
+    $352,             p.prorows,<br />
+    $353,       CASE WHEN l.lanname NOT IN ($354, $355)<br />
+                               THEN pg_get_functiondef(p.oid)<br />
+                             ELSE $356 END<br />
+  ) ORDER BY n.nspname, p.proname, pg_get_function_arguments(p.oid)) AS v<br />
+  FROM pg_proc p<br />
+  JOIN pg_namespace n ON n.oid = p.pronamespace<br />
+  JOIN pg_language l  ON l.oid = p.prolang<br />
+  WHERE n.nspname NOT IN ($357, $358)<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- triggers: per-trigger detail<br />
+triggers AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $359,           n.nspname,<br />
+    $360,            c.relname,<br />
+    $361,     t.tgname,<br />
+    $362,          t.tgenabled &lt;&gt; $363,<br />
+    $364,           CASE<br />
+                          WHEN (t.tgtype &amp;  $365) &lt;&gt; $366 THEN $367<br />
+                          WHEN (t.tgtype &amp; $368) &lt;&gt; $369 THEN $370<br />
+                          ELSE $371 END,<br />
+    $372,           array_remove(ARRAY[<br />
+                          CASE WHEN (t.tgtype &amp;  $373) &lt;&gt; $374 THEN $375   END,<br />
+                          CASE WHEN (t.tgtype &amp;  $376) &lt;&gt; $377 THEN $378   END,<br />
+                          CASE WHEN (t.tgtype &amp; $379) &lt;&gt; $380 THEN $381   END,<br />
+                          CASE WHEN (t.tgtype &amp; $382) &lt;&gt; $383 THEN $384 END<br />
+                        ], $385),<br />
+    $386,      CASE WHEN (t.tgtype &amp; $387) &lt;&gt; $388 THEN $389 ELSE $390 END,<br />
+    $391,  fn.nspname,<br />
+    $392,    p.proname,<br />
+    $393,        pg_get_expr(t.tgqual, t.tgrelid)<br />
+  ) ORDER BY n.nspname, c.relname, t.tgname) AS v<br />
+  FROM pg_trigger t<br />
+  JOIN pg_class c       ON c.oid = t.tgrelid<br />
+  JOIN pg_namespace n   ON n.oid = c.relnamespace<br />
+  JOIN pg_proc p        ON p.oid = t.tgfoid<br />
+  JOIN pg_namespace fn  ON fn.oid = p.pronamespace<br />
+  WHERE NOT t.tgisinternal<br />
+    AND n.nspname NOT IN ($394, $395)<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- mat_views: materialized views<br />
+mat_views AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $396,       schemaname,<br />
+    $397,         matviewname,<br />
+    $398,        matviewowner,<br />
+    $399,   tablespace,<br />
+    $400, ispopulated,<br />
+    $401,   definition<br />
+  ) ORDER BY schemaname, matviewname) AS v<br />
+  FROM pg_matviews<br />
+  WHERE schemaname NOT IN ($402, $403)<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- policies: row-level security policies<br />
+policies AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $404,       n.nspname,<br />
+    $405,        c.relname,<br />
+    $406,         p.polname,<br />
+    $407,   p.polpermissive,<br />
+    $408,        CASE<br />
+                      WHEN p.polroles = $409::oid[] THEN ARRAY[$410]<br />
+                      ELSE ARRAY(SELECT rolname FROM pg_roles r<br />
+                                 WHERE r.oid = ANY(p.polroles))<br />
+                    END,<br />
+    $411,          CASE p.polcmd<br />
+                      WHEN $412 THEN $413<br />
+                      WHEN $414 THEN $415<br />
+                      WHEN $416 THEN $417<br />
+                      WHEN $418 THEN $419<br />
+                      WHEN $420 THEN $421<br />
+                    END,<br />
+    $422,         pg_get_expr(p.polqual, p.polrelid),<br />
+    $423,   pg_get_expr(p.polwithcheck, p.polrelid),<br />
+    $424,  c.relrowsecurity,<br />
+    $425,   c.relforcerowsecurity<br />
+  ) ORDER BY n.nspname, c.relname, p.polname) AS v<br />
+  FROM pg_policy p<br />
+  JOIN pg_class c     ON c.oid = p.polrelid<br />
+  JOIN pg_namespace n ON n.oid = c.relnamespace<br />
+  WHERE n.nspname NOT IN ($426, $427)<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- rules: rewrite rules on tables/views (excluding default view return rules)<br />
+-- pg_rules only has schemaname/tablename/rulename/definition; event and<br />
+-- do_instead come from pg_rewrite (ev_type, is_instead).<br />
+rules AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $428,     n.nspname,<br />
+    $429,      c.relname,<br />
+    $430,  r.rulename,<br />
+    $431,      CASE r.ev_type<br />
+                    WHEN $432 THEN $433<br />
+                    WHEN $434 THEN $435<br />
+                    WHEN $436 THEN $437<br />
+                    WHEN $438 THEN $439<br />
+                    ELSE r.ev_type::text END,<br />
+    $440, r.is_instead,<br />
+    $441, pg_get_ruledef(r.oid)<br />
+  ) ORDER BY n.nspname, c.relname, r.rulename) AS v<br />
+  FROM pg_rewrite r<br />
+  JOIN pg_class c     ON c.oid = r.ev_class<br />
+  JOIN pg_namespace n ON n.oid = c.relnamespace<br />
+  WHERE n.nspname NOT IN ($442, $443)<br />
+    AND r.rulename &lt;&gt; $444<br />
+)<br />
+-- ---------------------------------------------------------------------------<br />
+SELECT json_build_object(<br />
+  $445,               (SELECT v FROM meta),<br />
+  $446,           (SELECT v FROM databases),<br />
+  $447,             (SELECT v FROM schemas),<br />
+  $448,          (SELECT v FROM extensions),<br />
+  $449,(SELECT v FROM available_extensions),<br />
+  $450,         (SELECT v FROM tablespaces),<br />
+  $451,              (SELECT v FROM tables),<br />
+  $452,             (SELECT v FROM columns),<br />
+  $453,             (SELECT v FROM indexes),<br />
+  $454,         (SELECT v FROM constraints),<br />
+  $455,       (SELECT v FROM unindexed_fks),<br />
+  $456,           (SELECT v FROM sequences),<br />
+  $457,               (SELECT v FROM views),<br />
+  $458,   (SELECT v FROM functions_summary),<br />
+  $459,               (SELECT v FROM roles),<br />
+  $460,        (SELECT v FROM settings_key),<br />
+  $461,       (SELECT v FROM planner_stats),<br />
+  $462,      (SELECT v FROM bloat_computed),<br />
+  $463,           (SELECT v FROM functions),<br />
+  $464,            (SELECT v FROM triggers),<br />
+  $465,           (SELECT v FROM mat_views),<br />
+  $466,            (SELECT v FROM policies),<br />
+  $467,               (SELECT v FROM rules)<br />
+)</td>
+    <td align="right">1</td>
+    <td align="right">30.62</td>
+    <td align="right">30.62</td>
+    <td align="right">1</td>
+  </tr>
+</table>
+
+<h2 id="jitter" data-i18n="h2_jitter">7. Instabilite (Jitter / Ecart-type)</h2>
+<p data-i18n="p_jitter">Forte deviation standard (plans instables).</p>
+<table border="1" class="table-container">
+  <tr>
+    <th align="center">Requete (Cliquer)</th>
+    <th align="center">Appels</th>
+    <th align="center">Moyenne (ms)</th>
+    <th align="center">Ecart-Type (ms)</th>
+    <th align="center">Ratio Var.</th>
+  </tr>
+</table>
+
+<h2 id="temp" data-i18n="h2_temp">8. Fichiers Temporaires (Spill to Disk)</h2>
+<p data-i18n="p_temp">Consommateurs de work_mem.</p>
+<table border="1" class="table-container">
+  <tr>
+    <th align="center">Requete (Cliquer)</th>
+    <th align="center">Appels</th>
+    <th align="center">Blks Written</th>
+    <th align="center">Total Temp Size</th>
+    <th align="center">Blks / Appel</th>
+  </tr>
+</table>
+
+<h2 id="cache" data-i18n="h2_cache">9. Cache Miss et Blocs Salis</h2>
+<p data-i18n="p_cache">Pression sur le buffer pool (RAM).</p>
+<table border="1" class="table-container">
+  <tr>
+    <th align="center">Requete (Cliquer)</th>
+    <th align="center">Appels</th>
+    <th align="center">Cache Hit PCT</th>
+    <th align="center">Blocks Salis</th>
+  </tr>
+  <tr valign="top">
+    <td align="left">INSERT INTO sales.order_items (order_id, sku, qty, unit_cents)<br />
+  SELECT $1+(g%$2), $3||(g%$4), $5+(g%$6), (g*$7)%$8 FROM generate_series($9,$10) g</td>
+    <td align="right">1</td>
+    <td align="right">100.00</td>
+    <td align="right">313</td>
+  </tr>
+  <tr valign="top">
+    <td align="left">INSERT INTO sales.orders (customer_id, status, total_cents)<br />
+  SELECT $1+(g%$2), (ARRAY[$3,$4,$5,$6])[$7+(g%$8)], (g*$9)%$10 FROM generate_series($11,$12) g</td>
+    <td align="right">1</td>
+    <td align="right">100.00</td>
+    <td align="right">127</td>
+  </tr>
+  <tr valign="top">
+    <td align="left">INSERT INTO billing.invoices (order_id, amount_cents) SELECT $1+(g%$2), (g*$3)%$4 FROM generate_series($5,$6) g</td>
+    <td align="right">1</td>
+    <td align="right">100.00</td>
+    <td align="right">58</td>
+  </tr>
+  <tr valign="top">
+    <td align="left">INSERT INTO billing.payments (invoice_id, method, captured_at)<br />
+  SELECT $1+(g%$2), (ARRAY[$3,$4,$5])[$6+(g%$7)], now() - (g||$8)::interval FROM generate_series($9,$10) g</td>
+    <td align="right">1</td>
+    <td align="right">100.00</td>
+    <td align="right">55</td>
+  </tr>
+  <tr valign="top">
+    <td align="left">UPDATE sales.orders SET status=$1 WHERE id % $2 = $3</td>
+    <td align="right">1</td>
+    <td align="right">100.00</td>
+    <td align="right">36</td>
+  </tr>
+  <tr valign="top">
+    <td align="left">WITH<br />
+-- ---------------------------------------------------------------------------<br />
+meta AS (<br />
+  SELECT json_build_object(<br />
+    $1,               $2,<br />
+    $3,            $4,<br />
+    $5,       now(),<br />
+    $6,         version(),<br />
+    $7,     current_setting($8)::int,<br />
+    $9,           current_database(),<br />
+    $10,    pg_encoding_to_char(<br />
+                            (SELECT encoding FROM pg_database WHERE datname = current_database())),<br />
+    $11,         current_setting($12)::int,<br />
+    $13, current_setting($14)::bigint<br />
+  ) AS v<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- databases: include XID wraparound age for v_wrap detection<br />
+databases AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $15,              datname,<br />
+    $16,             pg_get_userbyid(datdba),<br />
+    $17,          pg_encoding_to_char(encoding),<br />
+    $18,           datcollate,<br />
+    $19,             datctype,<br />
+    $20,        pg_database_size(datname),<br />
+    $21,         datconnlimit,<br />
+    $22,       datistemplate,<br />
+    $23,        datallowconn,<br />
+    $24,      datfrozenxid::text,<br />
+    $25,           age(datfrozenxid),<br />
+    $26,       round($27 * age(datfrozenxid)<br />
+                           / NULLIF(current_setting($28)::bigint, $29), $30)<br />
+  ) ORDER BY datname) AS v<br />
+  FROM pg_database<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+schemas AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $31,  nspname,<br />
+    $32, pg_get_userbyid(nspowner)<br />
+  ) ORDER BY nspname) AS v<br />
+  FROM pg_namespace<br />
+  WHERE nspname NOT LIKE $33<br />
+    AND nspname NOT LIKE $34<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+extensions AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $35,         extname,<br />
+    $36,      extversion,<br />
+    $37,       n.nspname,<br />
+    $38,  extrelocatable<br />
+  ) ORDER BY extname) AS v<br />
+  FROM pg_extension e<br />
+  JOIN pg_namespace n ON n.oid = e.extnamespace<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+tablespaces AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $39,       spcname,<br />
+    $40,      pg_get_userbyid(spcowner),<br />
+    $41,   pg_tablespace_location(oid),<br />
+    $42, pg_tablespace_size(oid)<br />
+  ) ORDER BY spcname) AS v<br />
+  FROM pg_tablespace<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- tables: include relpages + relfrozenxid (needed for bloat formula + wraparound)<br />
+tables AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $43,          t.schemaname,<br />
+    $44,           t.tablename,<br />
+    $45,           t.tableowner,<br />
+    $46,      t.tablespace,<br />
+    $47,     pg_total_relation_size(t.schemaname || $48 || quote_ident(t.tablename)),<br />
+    $49,     pg_relation_size(t.schemaname || $50 || quote_ident(t.tablename)),<br />
+    $51,     pg_indexes_size(t.schemaname || $52 || quote_ident(t.tablename)),<br />
+    $53,     COALESCE(<br />
+                         pg_total_relation_size(t.schemaname || $54 || quote_ident(t.tablename))<br />
+                         - pg_relation_size(t.schemaname || $55 || quote_ident(t.tablename))<br />
+                         - pg_indexes_size(t.schemaname || $56 || quote_ident(t.tablename)), $57),<br />
+    $58,    c.reltuples::bigint,<br />
+    $59,        c.relpages,<br />
+    $60,   c.relallvisible,<br />
+    $61,    c.relfrozenxid::text,<br />
+    $62,   age(c.relfrozenxid),<br />
+    $63,         c.relkind::text,<br />
+    $64,  c.relpersistence::text,<br />
+    $65,  c.relhastriggers,<br />
+    $66,     c.relhasindex,<br />
+    $67,      (SELECT (regexp_match(c.reloptions::text, $68))[$69]::int)<br />
+  ) ORDER BY t.schemaname, t.tablename) AS v<br />
+  FROM pg_tables t<br />
+  JOIN pg_class c      ON c.relname = t.tablename<br />
+  JOIN pg_namespace n  ON n.oid = c.relnamespace AND n.nspname = t.schemaname<br />
+  WHERE t.schemaname NOT IN ($70, $71, $72)<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- columns: full type info + alignment/length for padding waste analysis<br />
+columns AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $73,        n.nspname,<br />
+    $74,         c.relname,<br />
+    $75,        a.attname,<br />
+    $76,      a.attnum,<br />
+    $77,     t.typname,<br />
+    $78, t.typcategory::text,<br />
+    $79,        a.attlen,        -- -1 = variable length<br />
+    $80,      a.attalign::text, -- c=1B, s=2B, i=4B, d=8B<br />
+    $81,    a.attstorage::text, -- p=plain, e=external, m=main, x=extended<br />
+    $82,    a.attnotnull,<br />
+    $83,      a.attndims,<br />
+    $84,     a.atthasdef,<br />
+    $85,   a.attidentity::text,<br />
+    $86,  a.attgenerated::text,<br />
+    $87,     a.atttypmod,     -- type modifier (e.g. varchar(N))<br />
+    $88,      CASE a.attlen<br />
+                       WHEN $89 THEN $90<br />
+                       ELSE a.attlen::text || $91<br />
+                     END,<br />
+    $92,   CASE a.attalign<br />
+                       WHEN $93 THEN $94<br />
+                       WHEN $95 THEN $96<br />
+                       WHEN $97 THEN $98<br />
+                       WHEN $99 THEN $100<br />
+                       ELSE $101<br />
+                     END<br />
+  ) ORDER BY n.nspname, c.relname, a.attnum) AS v<br />
+  FROM pg_attribute a<br />
+  JOIN pg_class c     ON c.oid = a.attrelid<br />
+  JOIN pg_namespace n ON n.oid = c.relnamespace<br />
+  JOIN pg_type t      ON t.oid = a.atttypid<br />
+  WHERE a.attnum &gt; $102<br />
+    AND NOT a.attisdropped<br />
+    AND n.nspname NOT IN ($103, $104, $105)<br />
+    AND c.relkind IN ($106, $107)  -- regular tables and partitioned tables only<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+indexes AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $108,       schemaname,<br />
+    $109,        tablename,<br />
+    $110,   indexname,<br />
+    $111,   tablespace,<br />
+    $112,    indexdef,<br />
+    $113,   pg_relation_size(schemaname || $114 || quote_ident(indexname)),<br />
+    $115,    ix.indisunique,<br />
+    $116,   ix.indisprimary,<br />
+    $117, ix.indisexclusion,<br />
+    $118,     ix.indisvalid,<br />
+    $119,     ix.indisready,<br />
+    $120,     array_length(ix.indkey, $121),<br />
+    $122,       ix.indkey::int2[]::text,  -- column positions (for dup detection)<br />
+    $123,     ix.indclass::int4[]::text,<br />
+    $124,    ix.indoption::int2[]::text,<br />
+    $125,    ix.indexprs IS NOT NULL,<br />
+    $126,     ix.indpred IS NOT NULL<br />
+  ) ORDER BY schemaname, tablename, indexname) AS v<br />
+  FROM pg_indexes i<br />
+  JOIN pg_class c    ON c.relname = indexname<br />
+  JOIN pg_index ix   ON ix.indexrelid = c.oid<br />
+  JOIN pg_namespace n ON n.oid = c.relnamespace<br />
+  WHERE schemaname NOT IN ($127, $128)<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- constraints: include conkey (column positions) for unindexed FK detection<br />
+constraints AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $129,        n.nspname,<br />
+    $130,         cl.relname,<br />
+    $131,          conname,<br />
+    $132,          CASE contype<br />
+                       WHEN $133 THEN $134<br />
+                       WHEN $135 THEN $136<br />
+                       WHEN $137 THEN $138<br />
+                       WHEN $139 THEN $140<br />
+                       WHEN $141 THEN $142<br />
+                       WHEN $143 THEN $144<br />
+                       ELSE contype::text END,<br />
+    $145, condeferrable,<br />
+    $146,   condeferred,<br />
+    $147,  convalidated,<br />
+    $148,        conkey::text,   -- local column positions<br />
+    $149,       confkey::text,  -- referenced column positions<br />
+    $150,      array_length(conkey, $151),<br />
+    $152,     fn.nspname,<br />
+    $153,      fc.relname<br />
+  ) ORDER BY n.nspname, cl.relname, conname) AS v<br />
+  FROM pg_constraint co<br />
+  JOIN pg_class     cl ON cl.oid = co.conrelid<br />
+  JOIN pg_namespace n  ON n.oid = cl.relnamespace<br />
+  LEFT JOIN pg_class     fc ON fc.oid = co.confrelid<br />
+  LEFT JOIN pg_namespace fn ON fn.oid = fc.relnamespace<br />
+  WHERE n.nspname NOT IN ($154, $155)<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- unindexed_fks: pre-computed (mirrors v_fk_unindexed in ultimate_report)<br />
+unindexed_fks AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $156,  n1.nspname,<br />
+    $157,   c1.relname,<br />
+    $158,  a1.attname,<br />
+    $159, t.conname,<br />
+    $160, fn.nspname || $161 || fc.relname<br />
+  ) ORDER BY n1.nspname, c1.relname) AS v<br />
+  FROM pg_constraint t<br />
+  JOIN pg_attribute  a1 ON a1.attrelid = t.conrelid AND a1.attnum = t.conkey[$162]<br />
+  JOIN pg_class      c1 ON c1.oid = t.conrelid<br />
+  JOIN pg_namespace  n1 ON n1.oid = c1.relnamespace<br />
+  LEFT JOIN pg_class     fc ON fc.oid = t.confrelid<br />
+  LEFT JOIN pg_namespace fn ON fn.oid = fc.relnamespace<br />
+  WHERE t.contype = $163<br />
+    AND n1.nspname NOT IN ($164, $165)<br />
+    AND NOT EXISTS (<br />
+      SELECT $166 FROM pg_index i<br />
+      WHERE i.indrelid = t.conrelid<br />
+        AND i.indkey[$167] = t.conkey[$168]<br />
+    )<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+sequences AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $169,        n.nspname,<br />
+    $170,          c.relname,<br />
+    $171,     t.typname,<br />
+    $172,         s.seqstart,<br />
+    $173,     s.seqincrement,<br />
+    $174,           s.seqmin,<br />
+    $175,           s.seqmax,<br />
+    $176,         s.seqcache,<br />
+    $177,         s.seqcycle,<br />
+    $178,    ps.last_value,<br />
+    $179, CASE WHEN s.seqmax &gt; s.seqmin<br />
+                       THEN round($180 * (<br />
+                         COALESCE(ps.last_value, s.seqmin) - s.seqmin<br />
+                       ) / NULLIF(s.seqmax - s.seqmin, $181), $182)<br />
+                     END<br />
+  ) ORDER BY n.nspname, c.relname) AS v<br />
+  FROM pg_sequence s<br />
+  JOIN pg_class c      ON c.oid = s.seqrelid<br />
+  JOIN pg_namespace n  ON n.oid = c.relnamespace<br />
+  JOIN pg_type t       ON t.oid = s.seqtypid<br />
+  LEFT JOIN pg_sequences ps ON ps.schemaname = n.nspname AND ps.sequencename = c.relname<br />
+  WHERE n.nspname NOT IN ($183, $184)<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+views AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $185,         table_schema,<br />
+    $186,           table_name,<br />
+    $187,   is_updatable = $188,<br />
+    $189,  is_insertable_into = $190<br />
+  ) ORDER BY table_schema, table_name) AS v<br />
+  FROM information_schema.views<br />
+  WHERE table_schema NOT IN ($191, $192)<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+functions_summary AS (<br />
+  SELECT json_build_object(<br />
+    $193,     count(*),<br />
+    $194, json_object_agg(lanname, cnt)<br />
+  ) AS v<br />
+  FROM (<br />
+    SELECT l.lanname, count(*) AS cnt<br />
+    FROM pg_proc p<br />
+    JOIN pg_language l  ON l.oid = p.prolang<br />
+    JOIN pg_namespace n ON n.oid = p.pronamespace<br />
+    WHERE n.nspname NOT IN ($195, $196)<br />
+    GROUP BY l.lanname<br />
+  ) sub<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- roles: include password hash TYPE (not value) for security audit<br />
+roles AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $197,         rolname,<br />
+    $198,    rolsuper,<br />
+    $199,      rolinherit,<br />
+    $200,   rolcreaterole,<br />
+    $201,     rolcreatedb,<br />
+    $202,        rolcanlogin,<br />
+    $203,  rolreplication,<br />
+    $204,    rolbypassrls,<br />
+    $205,    rolconnlimit,<br />
+    $206,  rolvaliduntil,<br />
+    $207, rolpassword IS NOT NULL,<br />
+    $208,     CASE<br />
+                      WHEN rolpassword IS NULL       THEN $209<br />
+                      WHEN rolpassword LIKE $210 THEN $211<br />
+                      WHEN rolpassword LIKE $212   THEN $213<br />
+                      ELSE $214<br />
+                    END,<br />
+    $215,   CASE<br />
+                      WHEN rolsuper OR rolcreaterole OR rolreplication THEN $216<br />
+                      WHEN rolpassword IS NULL AND rolcanlogin THEN $217<br />
+                      ELSE $218<br />
+                    END<br />
+  ) ORDER BY rolname) AS v<br />
+  FROM pg_roles<br />
+  WHERE rolname NOT LIKE $219<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- settings: complete set used by audit checks<br />
+settings_key AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $220,     name,<br />
+    $221,  setting,<br />
+    $222,     unit,<br />
+    $223,   source,<br />
+    $224,  min_val,<br />
+    $225,  max_val<br />
+  ) ORDER BY name) AS v<br />
+  FROM pg_settings<br />
+  WHERE name IN (<br />
+    $226,$227,$228,$229,<br />
+    $230,$231,$232,$233,<br />
+    $234,$235,<br />
+    $236,$237,$238,<br />
+    $239,$240,$241,<br />
+    $242,$243,$244,<br />
+    $245,$246,$247,$248,<br />
+    $249,$250,$251,<br />
+    $252,$253,$254,<br />
+    $255,$256,$257,<br />
+    $258,$259,$260,$261,<br />
+    $262,$263,$264,<br />
+    $265,$266,$267,<br />
+    $268,$269<br />
+  )<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- pg_stats: planner column statistics — used by bloat formula in ultimate_report<br />
+-- (null_frac, avg_width per column; NOT actual data values)<br />
+planner_stats AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $270,        schemaname,<br />
+    $271,         tablename,<br />
+    $272,        attname,<br />
+    $273,     inherited,<br />
+    $274,     round(null_frac::numeric, $275),<br />
+    $276,     avg_width,<br />
+    $277,    n_distinct,<br />
+    $278,   round(correlation::numeric, $279),<br />
+    $280, array_length(most_common_freqs, $281),<br />
+    $282,  array_length(histogram_bounds, $283)<br />
+  ) ORDER BY schemaname, tablename, attname) AS v<br />
+  FROM pg_stats<br />
+  WHERE schemaname NOT IN ($284, $285)<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- bloat_pre_computed: same formula as v_bloat in ultimate_report.sql<br />
+bloat_computed AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $286,      schemaname,<br />
+    $287,       tablename,<br />
+    $288,    relpages,<br />
+    $289,        otta,<br />
+    $290,      round((CASE WHEN otta = $291 THEN $292<br />
+                          ELSE relpages::float / NULLIF(otta, $293) END)::numeric, $294),<br />
+    $295,GREATEST(relpages - otta, $296),<br />
+    $297, GREATEST(relpages - otta, $298) * current_setting($299)::int<br />
+  ) ORDER BY GREATEST(relpages - otta, $300) DESC NULLS LAST) AS v<br />
+  FROM (<br />
+    SELECT schemaname, tablename, cc.relpages,<br />
+      CEIL((cc.reltuples * $301) / NULLIF(current_setting($302)::int - $303, $304))::bigint AS otta<br />
+    FROM pg_stats s<br />
+    JOIN pg_class cc     ON cc.relname = s.tablename<br />
+    JOIN pg_namespace nn ON cc.relnamespace = nn.oid AND nn.nspname = s.schemaname<br />
+    WHERE s.schemaname NOT IN ($305, $306)<br />
+    GROUP BY schemaname, tablename, cc.relpages, cc.reltuples<br />
+  ) foo<br />
+  WHERE relpages &gt; otta<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- available extensions (for extension audit)<br />
+available_extensions AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $307,              name,<br />
+    $308,   default_version,<br />
+    $309, installed_version,<br />
+    $310,           comment<br />
+  ) ORDER BY name) AS v<br />
+  FROM pg_available_extensions<br />
+  WHERE installed_version IS NOT NULL<br />
+     OR name IN ($311,$312,$313,<br />
+                 $314,$315,$316,$317,$318)<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- functions: per-function / procedure detail<br />
+functions AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $319,           n.nspname,<br />
+    $320,             p.proname,<br />
+    $321,         l.lanname,<br />
+    $322,             CASE p.prokind<br />
+                          WHEN $323 THEN $324<br />
+                          WHEN $325 THEN $326<br />
+                          WHEN $327 THEN $328<br />
+                          WHEN $329 THEN $330<br />
+                          ELSE p.prokind::text END,<br />
+    $331,      CASE WHEN p.prokind = $332 THEN $333<br />
+                             ELSE pg_get_function_result(p.oid) END,<br />
+    $334,        pg_get_function_arguments(p.oid),<br />
+    $335,       CASE p.provolatile<br />
+                          WHEN $336 THEN $337<br />
+                          WHEN $338 THEN $339<br />
+                          WHEN $340 THEN $341 END,<br />
+    $342, p.prosecdef,<br />
+    $343,           p.proisstrict,<br />
+    $344,         CASE p.proparallel<br />
+                          WHEN $345 THEN $346<br />
+                          WHEN $347 THEN $348<br />
+                          WHEN $349 THEN $350 END,<br />
+    $351,             p.procost,<br />
+    $352,             p.prorows,<br />
+    $353,       CASE WHEN l.lanname NOT IN ($354, $355)<br />
+                               THEN pg_get_functiondef(p.oid)<br />
+                             ELSE $356 END<br />
+  ) ORDER BY n.nspname, p.proname, pg_get_function_arguments(p.oid)) AS v<br />
+  FROM pg_proc p<br />
+  JOIN pg_namespace n ON n.oid = p.pronamespace<br />
+  JOIN pg_language l  ON l.oid = p.prolang<br />
+  WHERE n.nspname NOT IN ($357, $358)<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- triggers: per-trigger detail<br />
+triggers AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $359,           n.nspname,<br />
+    $360,            c.relname,<br />
+    $361,     t.tgname,<br />
+    $362,          t.tgenabled &lt;&gt; $363,<br />
+    $364,           CASE<br />
+                          WHEN (t.tgtype &amp;  $365) &lt;&gt; $366 THEN $367<br />
+                          WHEN (t.tgtype &amp; $368) &lt;&gt; $369 THEN $370<br />
+                          ELSE $371 END,<br />
+    $372,           array_remove(ARRAY[<br />
+                          CASE WHEN (t.tgtype &amp;  $373) &lt;&gt; $374 THEN $375   END,<br />
+                          CASE WHEN (t.tgtype &amp;  $376) &lt;&gt; $377 THEN $378   END,<br />
+                          CASE WHEN (t.tgtype &amp; $379) &lt;&gt; $380 THEN $381   END,<br />
+                          CASE WHEN (t.tgtype &amp; $382) &lt;&gt; $383 THEN $384 END<br />
+                        ], $385),<br />
+    $386,      CASE WHEN (t.tgtype &amp; $387) &lt;&gt; $388 THEN $389 ELSE $390 END,<br />
+    $391,  fn.nspname,<br />
+    $392,    p.proname,<br />
+    $393,        pg_get_expr(t.tgqual, t.tgrelid)<br />
+  ) ORDER BY n.nspname, c.relname, t.tgname) AS v<br />
+  FROM pg_trigger t<br />
+  JOIN pg_class c       ON c.oid = t.tgrelid<br />
+  JOIN pg_namespace n   ON n.oid = c.relnamespace<br />
+  JOIN pg_proc p        ON p.oid = t.tgfoid<br />
+  JOIN pg_namespace fn  ON fn.oid = p.pronamespace<br />
+  WHERE NOT t.tgisinternal<br />
+    AND n.nspname NOT IN ($394, $395)<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- mat_views: materialized views<br />
+mat_views AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $396,       schemaname,<br />
+    $397,         matviewname,<br />
+    $398,        matviewowner,<br />
+    $399,   tablespace,<br />
+    $400, ispopulated,<br />
+    $401,   definition<br />
+  ) ORDER BY schemaname, matviewname) AS v<br />
+  FROM pg_matviews<br />
+  WHERE schemaname NOT IN ($402, $403)<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- policies: row-level security policies<br />
+policies AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $404,       n.nspname,<br />
+    $405,        c.relname,<br />
+    $406,         p.polname,<br />
+    $407,   p.polpermissive,<br />
+    $408,        CASE<br />
+                      WHEN p.polroles = $409::oid[] THEN ARRAY[$410]<br />
+                      ELSE ARRAY(SELECT rolname FROM pg_roles r<br />
+                                 WHERE r.oid = ANY(p.polroles))<br />
+                    END,<br />
+    $411,          CASE p.polcmd<br />
+                      WHEN $412 THEN $413<br />
+                      WHEN $414 THEN $415<br />
+                      WHEN $416 THEN $417<br />
+                      WHEN $418 THEN $419<br />
+                      WHEN $420 THEN $421<br />
+                    END,<br />
+    $422,         pg_get_expr(p.polqual, p.polrelid),<br />
+    $423,   pg_get_expr(p.polwithcheck, p.polrelid),<br />
+    $424,  c.relrowsecurity,<br />
+    $425,   c.relforcerowsecurity<br />
+  ) ORDER BY n.nspname, c.relname, p.polname) AS v<br />
+  FROM pg_policy p<br />
+  JOIN pg_class c     ON c.oid = p.polrelid<br />
+  JOIN pg_namespace n ON n.oid = c.relnamespace<br />
+  WHERE n.nspname NOT IN ($426, $427)<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- rules: rewrite rules on tables/views (excluding default view return rules)<br />
+-- pg_rules only has schemaname/tablename/rulename/definition; event and<br />
+-- do_instead come from pg_rewrite (ev_type, is_instead).<br />
+rules AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $428,     n.nspname,<br />
+    $429,      c.relname,<br />
+    $430,  r.rulename,<br />
+    $431,      CASE r.ev_type<br />
+                    WHEN $432 THEN $433<br />
+                    WHEN $434 THEN $435<br />
+                    WHEN $436 THEN $437<br />
+                    WHEN $438 THEN $439<br />
+                    ELSE r.ev_type::text END,<br />
+    $440, r.is_instead,<br />
+    $441, pg_get_ruledef(r.oid)<br />
+  ) ORDER BY n.nspname, c.relname, r.rulename) AS v<br />
+  FROM pg_rewrite r<br />
+  JOIN pg_class c     ON c.oid = r.ev_class<br />
+  JOIN pg_namespace n ON n.oid = c.relnamespace<br />
+  WHERE n.nspname NOT IN ($442, $443)<br />
+    AND r.rulename &lt;&gt; $444<br />
+)<br />
+-- ---------------------------------------------------------------------------<br />
+SELECT json_build_object(<br />
+  $445,               (SELECT v FROM meta),<br />
+  $446,           (SELECT v FROM databases),<br />
+  $447,             (SELECT v FROM schemas),<br />
+  $448,          (SELECT v FROM extensions),<br />
+  $449,(SELECT v FROM available_extensions),<br />
+  $450,         (SELECT v FROM tablespaces),<br />
+  $451,              (SELECT v FROM tables),<br />
+  $452,             (SELECT v FROM columns),<br />
+  $453,             (SELECT v FROM indexes),<br />
+  $454,         (SELECT v FROM constraints),<br />
+  $455,       (SELECT v FROM unindexed_fks),<br />
+  $456,           (SELECT v FROM sequences),<br />
+  $457,               (SELECT v FROM views),<br />
+  $458,   (SELECT v FROM functions_summary),<br />
+  $459,               (SELECT v FROM roles),<br />
+  $460,        (SELECT v FROM settings_key),<br />
+  $461,       (SELECT v FROM planner_stats),<br />
+  $462,      (SELECT v FROM bloat_computed),<br />
+  $463,           (SELECT v FROM functions),<br />
+  $464,            (SELECT v FROM triggers),<br />
+  $465,           (SELECT v FROM mat_views),<br />
+  $466,            (SELECT v FROM policies),<br />
+  $467,               (SELECT v FROM rules)<br />
+)</td>
+    <td align="right">1</td>
+    <td align="right">99.98</td>
+    <td align="right">0</td>
+  </tr>
+  <tr valign="top">
+    <td align="left">WITH<br />
+-- ---------------------------------------------------------------------------<br />
+meta AS (<br />
+  SELECT json_build_object(<br />
+    $1,               $2,<br />
+    $3,            $4,<br />
+    $5,       now(),<br />
+    $6,         version(),<br />
+    $7,     current_setting($8)::int,<br />
+    $9,           current_database(),<br />
+    $10,    pg_encoding_to_char(<br />
+                            (SELECT encoding FROM pg_database WHERE datname = current_database())),<br />
+    $11,         current_setting($12)::int,<br />
+    $13, current_setting($14)::bigint<br />
+  ) AS v<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- databases: include XID wraparound age for v_wrap detection<br />
+databases AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $15,              datname,<br />
+    $16,             pg_get_userbyid(datdba),<br />
+    $17,          pg_encoding_to_char(encoding),<br />
+    $18,           datcollate,<br />
+    $19,             datctype,<br />
+    $20,        pg_database_size(datname),<br />
+    $21,         datconnlimit,<br />
+    $22,       datistemplate,<br />
+    $23,        datallowconn,<br />
+    $24,      datfrozenxid::text,<br />
+    $25,           age(datfrozenxid),<br />
+    $26,       round($27 * age(datfrozenxid)<br />
+                           / NULLIF(current_setting($28)::bigint, $29), $30)<br />
+  ) ORDER BY datname) AS v<br />
+  FROM pg_database<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+schemas AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $31,  nspname,<br />
+    $32, pg_get_userbyid(nspowner)<br />
+  ) ORDER BY nspname) AS v<br />
+  FROM pg_namespace<br />
+  WHERE nspname NOT LIKE $33<br />
+    AND nspname NOT LIKE $34<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+extensions AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $35,         extname,<br />
+    $36,      extversion,<br />
+    $37,       n.nspname,<br />
+    $38,  extrelocatable<br />
+  ) ORDER BY extname) AS v<br />
+  FROM pg_extension e<br />
+  JOIN pg_namespace n ON n.oid = e.extnamespace<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+tablespaces AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $39,       spcname,<br />
+    $40,      pg_get_userbyid(spcowner),<br />
+    $41,   pg_tablespace_location(oid),<br />
+    $42, pg_tablespace_size(oid)<br />
+  ) ORDER BY spcname) AS v<br />
+  FROM pg_tablespace<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- tables: include relpages + relfrozenxid (needed for bloat formula + wraparound)<br />
+tables AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $43,          t.schemaname,<br />
+    $44,           t.tablename,<br />
+    $45,           t.tableowner,<br />
+    $46,      t.tablespace,<br />
+    $47,     pg_total_relation_size(t.schemaname || $48 || quote_ident(t.tablename)),<br />
+    $49,     pg_relation_size(t.schemaname || $50 || quote_ident(t.tablename)),<br />
+    $51,     pg_indexes_size(t.schemaname || $52 || quote_ident(t.tablename)),<br />
+    $53,     COALESCE(<br />
+                         pg_total_relation_size(t.schemaname || $54 || quote_ident(t.tablename))<br />
+                         - pg_relation_size(t.schemaname || $55 || quote_ident(t.tablename))<br />
+                         - pg_indexes_size(t.schemaname || $56 || quote_ident(t.tablename)), $57),<br />
+    $58,    c.reltuples::bigint,<br />
+    $59,        c.relpages,<br />
+    $60,   c.relallvisible,<br />
+    $61,    c.relfrozenxid::text,<br />
+    $62,   age(c.relfrozenxid),<br />
+    $63,         c.relkind::text,<br />
+    $64,  c.relpersistence::text,<br />
+    $65,  c.relhastriggers,<br />
+    $66,     c.relhasindex,<br />
+    $67,      (SELECT (regexp_match(c.reloptions::text, $68))[$69]::int)<br />
+  ) ORDER BY t.schemaname, t.tablename) AS v<br />
+  FROM pg_tables t<br />
+  JOIN pg_class c      ON c.relname = t.tablename<br />
+  JOIN pg_namespace n  ON n.oid = c.relnamespace AND n.nspname = t.schemaname<br />
+  WHERE t.schemaname NOT IN ($70, $71, $72)<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- columns: full type info + alignment/length for padding waste analysis<br />
+columns AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $73,        n.nspname,<br />
+    $74,         c.relname,<br />
+    $75,        a.attname,<br />
+    $76,      a.attnum,<br />
+    $77,     t.typname,<br />
+    $78, t.typcategory::text,<br />
+    $79,        a.attlen,        -- -1 = variable length<br />
+    $80,      a.attalign::text, -- c=1B, s=2B, i=4B, d=8B<br />
+    $81,    a.attstorage::text, -- p=plain, e=external, m=main, x=extended<br />
+    $82,    a.attnotnull,<br />
+    $83,      a.attndims,<br />
+    $84,     a.atthasdef,<br />
+    $85,   a.attidentity::text,<br />
+    $86,  a.attgenerated::text,<br />
+    $87,     a.atttypmod,     -- type modifier (e.g. varchar(N))<br />
+    $88,      CASE a.attlen<br />
+                       WHEN $89 THEN $90<br />
+                       ELSE a.attlen::text || $91<br />
+                     END,<br />
+    $92,   CASE a.attalign<br />
+                       WHEN $93 THEN $94<br />
+                       WHEN $95 THEN $96<br />
+                       WHEN $97 THEN $98<br />
+                       WHEN $99 THEN $100<br />
+                       ELSE $101<br />
+                     END<br />
+  ) ORDER BY n.nspname, c.relname, a.attnum) AS v<br />
+  FROM pg_attribute a<br />
+  JOIN pg_class c     ON c.oid = a.attrelid<br />
+  JOIN pg_namespace n ON n.oid = c.relnamespace<br />
+  JOIN pg_type t      ON t.oid = a.atttypid<br />
+  WHERE a.attnum &gt; $102<br />
+    AND NOT a.attisdropped<br />
+    AND n.nspname NOT IN ($103, $104, $105)<br />
+    AND c.relkind IN ($106, $107)  -- regular tables and partitioned tables only<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+indexes AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $108,       schemaname,<br />
+    $109,        tablename,<br />
+    $110,   indexname,<br />
+    $111,   tablespace,<br />
+    $112,    indexdef,<br />
+    $113,   pg_relation_size(schemaname || $114 || quote_ident(indexname)),<br />
+    $115,    ix.indisunique,<br />
+    $116,   ix.indisprimary,<br />
+    $117, ix.indisexclusion,<br />
+    $118,     ix.indisvalid,<br />
+    $119,     ix.indisready,<br />
+    $120,     array_length(ix.indkey, $121),<br />
+    $122,       ix.indkey::int2[]::text,  -- column positions (for dup detection)<br />
+    $123,     ix.indclass::int4[]::text,<br />
+    $124,    ix.indoption::int2[]::text,<br />
+    $125,    ix.indexprs IS NOT NULL,<br />
+    $126,     ix.indpred IS NOT NULL<br />
+  ) ORDER BY schemaname, tablename, indexname) AS v<br />
+  FROM pg_indexes i<br />
+  JOIN pg_class c    ON c.relname = indexname<br />
+  JOIN pg_index ix   ON ix.indexrelid = c.oid<br />
+  JOIN pg_namespace n ON n.oid = c.relnamespace<br />
+  WHERE schemaname NOT IN ($127, $128)<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- constraints: include conkey (column positions) for unindexed FK detection<br />
+constraints AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $129,        n.nspname,<br />
+    $130,         cl.relname,<br />
+    $131,          conname,<br />
+    $132,          CASE contype<br />
+                       WHEN $133 THEN $134<br />
+                       WHEN $135 THEN $136<br />
+                       WHEN $137 THEN $138<br />
+                       WHEN $139 THEN $140<br />
+                       WHEN $141 THEN $142<br />
+                       WHEN $143 THEN $144<br />
+                       ELSE contype::text END,<br />
+    $145, condeferrable,<br />
+    $146,   condeferred,<br />
+    $147,  convalidated,<br />
+    $148,        conkey::text,   -- local column positions<br />
+    $149,       confkey::text,  -- referenced column positions<br />
+    $150,      array_length(conkey, $151),<br />
+    $152,     fn.nspname,<br />
+    $153,      fc.relname<br />
+  ) ORDER BY n.nspname, cl.relname, conname) AS v<br />
+  FROM pg_constraint co<br />
+  JOIN pg_class     cl ON cl.oid = co.conrelid<br />
+  JOIN pg_namespace n  ON n.oid = cl.relnamespace<br />
+  LEFT JOIN pg_class     fc ON fc.oid = co.confrelid<br />
+  LEFT JOIN pg_namespace fn ON fn.oid = fc.relnamespace<br />
+  WHERE n.nspname NOT IN ($154, $155)<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- unindexed_fks: pre-computed (mirrors v_fk_unindexed in ultimate_report)<br />
+unindexed_fks AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $156,  n1.nspname,<br />
+    $157,   c1.relname,<br />
+    $158,  a1.attname,<br />
+    $159, t.conname,<br />
+    $160, fn.nspname || $161 || fc.relname<br />
+  ) ORDER BY n1.nspname, c1.relname) AS v<br />
+  FROM pg_constraint t<br />
+  JOIN pg_attribute  a1 ON a1.attrelid = t.conrelid AND a1.attnum = t.conkey[$162]<br />
+  JOIN pg_class      c1 ON c1.oid = t.conrelid<br />
+  JOIN pg_namespace  n1 ON n1.oid = c1.relnamespace<br />
+  LEFT JOIN pg_class     fc ON fc.oid = t.confrelid<br />
+  LEFT JOIN pg_namespace fn ON fn.oid = fc.relnamespace<br />
+  WHERE t.contype = $163<br />
+    AND n1.nspname NOT IN ($164, $165)<br />
+    AND NOT EXISTS (<br />
+      SELECT $166 FROM pg_index i<br />
+      WHERE i.indrelid = t.conrelid<br />
+        AND i.indkey[$167] = t.conkey[$168]<br />
+    )<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+sequences AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $169,        n.nspname,<br />
+    $170,          c.relname,<br />
+    $171,     t.typname,<br />
+    $172,         s.seqstart,<br />
+    $173,     s.seqincrement,<br />
+    $174,           s.seqmin,<br />
+    $175,           s.seqmax,<br />
+    $176,         s.seqcache,<br />
+    $177,         s.seqcycle,<br />
+    $178,    ps.last_value,<br />
+    $179, CASE WHEN s.seqmax &gt; s.seqmin<br />
+                       THEN round($180 * (<br />
+                         COALESCE(ps.last_value, s.seqmin) - s.seqmin<br />
+                       ) / NULLIF(s.seqmax - s.seqmin, $181), $182)<br />
+                     END<br />
+  ) ORDER BY n.nspname, c.relname) AS v<br />
+  FROM pg_sequence s<br />
+  JOIN pg_class c      ON c.oid = s.seqrelid<br />
+  JOIN pg_namespace n  ON n.oid = c.relnamespace<br />
+  JOIN pg_type t       ON t.oid = s.seqtypid<br />
+  LEFT JOIN pg_sequences ps ON ps.schemaname = n.nspname AND ps.sequencename = c.relname<br />
+  WHERE n.nspname NOT IN ($183, $184)<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+views AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $185,         table_schema,<br />
+    $186,           table_name,<br />
+    $187,   is_updatable = $188,<br />
+    $189,  is_insertable_into = $190<br />
+  ) ORDER BY table_schema, table_name) AS v<br />
+  FROM information_schema.views<br />
+  WHERE table_schema NOT IN ($191, $192)<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+functions_summary AS (<br />
+  SELECT json_build_object(<br />
+    $193,     count(*),<br />
+    $194, json_object_agg(lanname, cnt)<br />
+  ) AS v<br />
+  FROM (<br />
+    SELECT l.lanname, count(*) AS cnt<br />
+    FROM pg_proc p<br />
+    JOIN pg_language l  ON l.oid = p.prolang<br />
+    JOIN pg_namespace n ON n.oid = p.pronamespace<br />
+    WHERE n.nspname NOT IN ($195, $196)<br />
+    GROUP BY l.lanname<br />
+  ) sub<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- roles: include password hash TYPE (not value) for security audit<br />
+roles AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $197,         rolname,<br />
+    $198,    rolsuper,<br />
+    $199,      rolinherit,<br />
+    $200,   rolcreaterole,<br />
+    $201,     rolcreatedb,<br />
+    $202,        rolcanlogin,<br />
+    $203,  rolreplication,<br />
+    $204,    rolbypassrls,<br />
+    $205,    rolconnlimit,<br />
+    $206,  rolvaliduntil,<br />
+    $207, rolpassword IS NOT NULL,<br />
+    $208,     CASE<br />
+                      WHEN rolpassword IS NULL       THEN $209<br />
+                      WHEN rolpassword LIKE $210 THEN $211<br />
+                      WHEN rolpassword LIKE $212   THEN $213<br />
+                      ELSE $214<br />
+                    END,<br />
+    $215,   CASE<br />
+                      WHEN rolsuper OR rolcreaterole OR rolreplication THEN $216<br />
+                      WHEN rolpassword IS NULL AND rolcanlogin THEN $217<br />
+                      ELSE $218<br />
+                    END<br />
+  ) ORDER BY rolname) AS v<br />
+  FROM pg_roles<br />
+  WHERE rolname NOT LIKE $219<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- settings: complete set used by audit checks<br />
+settings_key AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $220,     name,<br />
+    $221,  setting,<br />
+    $222,     unit,<br />
+    $223,   source,<br />
+    $224,  min_val,<br />
+    $225,  max_val<br />
+  ) ORDER BY name) AS v<br />
+  FROM pg_settings<br />
+  WHERE name IN (<br />
+    $226,$227,$228,$229,<br />
+    $230,$231,$232,$233,<br />
+    $234,$235,<br />
+    $236,$237,$238,<br />
+    $239,$240,$241,<br />
+    $242,$243,$244,<br />
+    $245,$246,$247,$248,<br />
+    $249,$250,$251,<br />
+    $252,$253,$254,<br />
+    $255,$256,$257,<br />
+    $258,$259,$260,$261,<br />
+    $262,$263,$264,<br />
+    $265,$266,$267,<br />
+    $268,$269<br />
+  )<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- pg_stats: planner column statistics — used by bloat formula in ultimate_report<br />
+-- (null_frac, avg_width per column; NOT actual data values)<br />
+planner_stats AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $270,        schemaname,<br />
+    $271,         tablename,<br />
+    $272,        attname,<br />
+    $273,     inherited,<br />
+    $274,     round(null_frac::numeric, $275),<br />
+    $276,     avg_width,<br />
+    $277,    n_distinct,<br />
+    $278,   round(correlation::numeric, $279),<br />
+    $280, array_length(most_common_freqs, $281),<br />
+    $282,  array_length(histogram_bounds, $283)<br />
+  ) ORDER BY schemaname, tablename, attname) AS v<br />
+  FROM pg_stats<br />
+  WHERE schemaname NOT IN ($284, $285)<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- bloat_pre_computed: same formula as v_bloat in ultimate_report.sql<br />
+bloat_computed AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $286,      schemaname,<br />
+    $287,       tablename,<br />
+    $288,    relpages,<br />
+    $289,        otta,<br />
+    $290,      round((CASE WHEN otta = $291 THEN $292<br />
+                          ELSE relpages::float / NULLIF(otta, $293) END)::numeric, $294),<br />
+    $295,GREATEST(relpages - otta, $296),<br />
+    $297, GREATEST(relpages - otta, $298) * current_setting($299)::int<br />
+  ) ORDER BY GREATEST(relpages - otta, $300) DESC NULLS LAST) AS v<br />
+  FROM (<br />
+    SELECT schemaname, tablename, cc.relpages,<br />
+      CEIL((cc.reltuples * $301) / NULLIF(current_setting($302)::int - $303, $304))::bigint AS otta<br />
+    FROM pg_stats s<br />
+    JOIN pg_class cc     ON cc.relname = s.tablename<br />
+    JOIN pg_namespace nn ON cc.relnamespace = nn.oid AND nn.nspname = s.schemaname<br />
+    WHERE s.schemaname NOT IN ($305, $306)<br />
+    GROUP BY schemaname, tablename, cc.relpages, cc.reltuples<br />
+  ) foo<br />
+  WHERE relpages &gt; otta<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- available extensions (for extension audit)<br />
+available_extensions AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $307,              name,<br />
+    $308,   default_version,<br />
+    $309, installed_version,<br />
+    $310,           comment<br />
+  ) ORDER BY name) AS v<br />
+  FROM pg_available_extensions<br />
+  WHERE installed_version IS NOT NULL<br />
+     OR name IN ($311,$312,$313,<br />
+                 $314,$315,$316,$317,$318)<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- functions: per-function / procedure detail<br />
+functions AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $319,           n.nspname,<br />
+    $320,             p.proname,<br />
+    $321,         l.lanname,<br />
+    $322,             CASE p.prokind<br />
+                          WHEN $323 THEN $324<br />
+                          WHEN $325 THEN $326<br />
+                          WHEN $327 THEN $328<br />
+                          WHEN $329 THEN $330<br />
+                          ELSE p.prokind::text END,<br />
+    $331,      CASE WHEN p.prokind = $332 THEN $333<br />
+                             ELSE pg_get_function_result(p.oid) END,<br />
+    $334,        pg_get_function_arguments(p.oid),<br />
+    $335,       CASE p.provolatile<br />
+                          WHEN $336 THEN $337<br />
+                          WHEN $338 THEN $339<br />
+                          WHEN $340 THEN $341 END,<br />
+    $342, p.prosecdef,<br />
+    $343,           p.proisstrict,<br />
+    $344,         CASE p.proparallel<br />
+                          WHEN $345 THEN $346<br />
+                          WHEN $347 THEN $348<br />
+                          WHEN $349 THEN $350 END,<br />
+    $351,             p.procost,<br />
+    $352,             p.prorows,<br />
+    $353,       CASE WHEN l.lanname NOT IN ($354, $355)<br />
+                               THEN pg_get_functiondef(p.oid)<br />
+                             ELSE $356 END<br />
+  ) ORDER BY n.nspname, p.proname, pg_get_function_arguments(p.oid)) AS v<br />
+  FROM pg_proc p<br />
+  JOIN pg_namespace n ON n.oid = p.pronamespace<br />
+  JOIN pg_language l  ON l.oid = p.prolang<br />
+  WHERE n.nspname NOT IN ($357, $358)<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- triggers: per-trigger detail<br />
+triggers AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $359,           n.nspname,<br />
+    $360,            c.relname,<br />
+    $361,     t.tgname,<br />
+    $362,          t.tgenabled &lt;&gt; $363,<br />
+    $364,           CASE<br />
+                          WHEN (t.tgtype &amp;  $365) &lt;&gt; $366 THEN $367<br />
+                          WHEN (t.tgtype &amp; $368) &lt;&gt; $369 THEN $370<br />
+                          ELSE $371 END,<br />
+    $372,           array_remove(ARRAY[<br />
+                          CASE WHEN (t.tgtype &amp;  $373) &lt;&gt; $374 THEN $375   END,<br />
+                          CASE WHEN (t.tgtype &amp;  $376) &lt;&gt; $377 THEN $378   END,<br />
+                          CASE WHEN (t.tgtype &amp; $379) &lt;&gt; $380 THEN $381   END,<br />
+                          CASE WHEN (t.tgtype &amp; $382) &lt;&gt; $383 THEN $384 END<br />
+                        ], $385),<br />
+    $386,      CASE WHEN (t.tgtype &amp; $387) &lt;&gt; $388 THEN $389 ELSE $390 END,<br />
+    $391,  fn.nspname,<br />
+    $392,    p.proname,<br />
+    $393,        pg_get_expr(t.tgqual, t.tgrelid)<br />
+  ) ORDER BY n.nspname, c.relname, t.tgname) AS v<br />
+  FROM pg_trigger t<br />
+  JOIN pg_class c       ON c.oid = t.tgrelid<br />
+  JOIN pg_namespace n   ON n.oid = c.relnamespace<br />
+  JOIN pg_proc p        ON p.oid = t.tgfoid<br />
+  JOIN pg_namespace fn  ON fn.oid = p.pronamespace<br />
+  WHERE NOT t.tgisinternal<br />
+    AND n.nspname NOT IN ($394, $395)<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- mat_views: materialized views<br />
+mat_views AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $396,       schemaname,<br />
+    $397,         matviewname,<br />
+    $398,        matviewowner,<br />
+    $399,   tablespace,<br />
+    $400, ispopulated,<br />
+    $401,   definition<br />
+  ) ORDER BY schemaname, matviewname) AS v<br />
+  FROM pg_matviews<br />
+  WHERE schemaname NOT IN ($402, $403)<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- policies: row-level security policies<br />
+policies AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $404,       n.nspname,<br />
+    $405,        c.relname,<br />
+    $406,         p.polname,<br />
+    $407,   p.polpermissive,<br />
+    $408,        CASE<br />
+                      WHEN p.polroles = $409::oid[] THEN ARRAY[$410]<br />
+                      ELSE ARRAY(SELECT rolname FROM pg_roles r<br />
+                                 WHERE r.oid = ANY(p.polroles))<br />
+                    END,<br />
+    $411,          CASE p.polcmd<br />
+                      WHEN $412 THEN $413<br />
+                      WHEN $414 THEN $415<br />
+                      WHEN $416 THEN $417<br />
+                      WHEN $418 THEN $419<br />
+                      WHEN $420 THEN $421<br />
+                    END,<br />
+    $422,         pg_get_expr(p.polqual, p.polrelid),<br />
+    $423,   pg_get_expr(p.polwithcheck, p.polrelid),<br />
+    $424,  c.relrowsecurity,<br />
+    $425,   c.relforcerowsecurity<br />
+  ) ORDER BY n.nspname, c.relname, p.polname) AS v<br />
+  FROM pg_policy p<br />
+  JOIN pg_class c     ON c.oid = p.polrelid<br />
+  JOIN pg_namespace n ON n.oid = c.relnamespace<br />
+  WHERE n.nspname NOT IN ($426, $427)<br />
+),<br />
+-- ---------------------------------------------------------------------------<br />
+-- rules: rewrite rules on tables/views (excluding default view return rules)<br />
+-- pg_rules only has schemaname/tablename/rulename/definition; event and<br />
+-- do_instead come from pg_rewrite (ev_type, is_instead).<br />
+rules AS (<br />
+  SELECT json_agg(json_build_object(<br />
+    $428,     n.nspname,<br />
+    $429,      c.relname,<br />
+    $430,  r.rulename,<br />
+    $431,      CASE r.ev_type<br />
+                    WHEN $432 THEN $433<br />
+                    WHEN $434 THEN $435<br />
+                    WHEN $436 THEN $437<br />
+                    WHEN $438 THEN $439<br />
+                    ELSE r.ev_type::text END,<br />
+    $440, r.is_instead,<br />
+    $441, pg_get_ruledef(r.oid)<br />
+  ) ORDER BY n.nspname, c.relname, r.rulename) AS v<br />
+  FROM pg_rewrite r<br />
+  JOIN pg_class c     ON c.oid = r.ev_class<br />
+  JOIN pg_namespace n ON n.oid = c.relnamespace<br />
+  WHERE n.nspname NOT IN ($442, $443)<br />
+    AND r.rulename &lt;&gt; $444<br />
+)<br />
+-- ---------------------------------------------------------------------------<br />
+SELECT json_build_object(<br />
+  $445,               (SELECT v FROM meta),<br />
+  $446,           (SELECT v FROM databases),<br />
+  $447,             (SELECT v FROM schemas),<br />
+  $448,          (SELECT v FROM extensions),<br />
+  $449,(SELECT v FROM available_extensions),<br />
+  $450,         (SELECT v FROM tablespaces),<br />
+  $451,              (SELECT v FROM tables),<br />
+  $452,             (SELECT v FROM columns),<br />
+  $453,             (SELECT v FROM indexes),<br />
+  $454,         (SELECT v FROM constraints),<br />
+  $455,       (SELECT v FROM unindexed_fks),<br />
+  $456,           (SELECT v FROM sequences),<br />
+  $457,               (SELECT v FROM views),<br />
+  $458,   (SELECT v FROM functions_summary),<br />
+  $459,               (SELECT v FROM roles),<br />
+  $460,        (SELECT v FROM settings_key),<br />
+  $461,       (SELECT v FROM planner_stats),<br />
+  $462,      (SELECT v FROM bloat_computed),<br />
+  $463,           (SELECT v FROM functions),<br />
+  $464,            (SELECT v FROM triggers),<br />
+  $465,           (SELECT v FROM mat_views),<br />
+  $466,            (SELECT v FROM policies),<br />
+  $467,               (SELECT v FROM rules)<br />
+)</td>
+    <td align="right">1</td>
+    <td align="right">99.10</td>
+    <td align="right">0</td>
+  </tr>
+  <tr valign="top">
+    <td align="left">ANALYZE</td>
+    <td align="right">1</td>
+    <td align="right">97.17</td>
+    <td align="right">59</td>
+  </tr>
+  <tr valign="top">
+    <td align="left">INSERT INTO sales.customers (email, country)<br />
+  SELECT $1||g||$2, (ARRAY[$3,$4,$5,$6])[$7+(g%$8)] FROM generate_series($9,$10) g</td>
+    <td align="right">1</td>
+    <td align="right">100.00</td>
+    <td align="right">25</td>
+  </tr>
+  <tr valign="top">
+    <td align="left">CREATE EXTENSION IF NOT EXISTS pg_stat_statements</td>
+    <td align="right">1</td>
+    <td align="right">96.15</td>
+    <td align="right">70</td>
+  </tr>
+</table>
+
+<h2 id="jit" data-i18n="h2_jit">10. Surcharge JIT</h2>
+<table border="1" class="table-container">
+  <tr>
+    <th align="center">Requete (Cliquer)</th>
+    <th align="center">Appels</th>
+    <th align="center">Moyenne (ms)</th>
+    <th align="center">JIT Overhead (ms)</th>
+  </tr>
+</table>
+
+<h2 id="info" data-i18n="h2_info">11. Informations Globales et Sante</h2>
+<table border="1" class="table-container">
+  <tr>
+    <th align="center">Deallocations</th>
+    <th align="center">Dernier Reset</th>
+  </tr>
+  <tr valign="top">
+    <td align="right">0</td>
+    <td align="left">2026-10-23 20:44:38.609432+00</td>
+  </tr>
+</table>
+
+<button id="backToTop" onclick="scrollToTop()" title="Retour en haut"><svg class="icon" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"></path></svg></button>
+<script>
+
+const translations = {
+  fr: {
+    title: "Rapport Performance PostgreSQL",
+    nav_title: "Navigation Rapide :",
+    nav_cpu: "1. Top CPU", nav_io: "2. Top IO", nav_plan: "3. Planning Time", nav_wal: "4. Top WAL", nav_freq: "5. Frequence",
+    nav_heavy: "6. Lourdes (Candidats Parallel)", nav_jitter: "7. Jitter", nav_temp: "8. Temp Files", nav_cache: "9. Cache Miss", nav_jit: "10. JIT", nav_info: "11. Info Globales",
+    h2_cpu: "1. Top Consommateurs CPU (Hors IO)", p_cpu: "Charge processeur pure (Total Time - IO Time).",
+    h2_io: "2. Top Consommateurs IO (Latence Disque)", p_io: "Attente disque (lecture/ecriture).",
+    h2_plan: "3. Top Temps de Planification", p_plan: "Necessite track_planning = on.",
+    h2_wal: "4. Top Generateurs de WAL", p_wal: "Ecritures journalisees (pression sur les checkpoints).",
+    h2_freq: "5. Top Frequence (Requetes marteaux)", p_freq: "Requetes tres rapides mais au volume massif.",
+    h2_heavy: "6. Requetes Lourdes (Temps total)", p_heavy: "Les temps d'execution absolus les plus longs.",
+    h2_jitter: "7. Instabilite (Jitter / Ecart-type)", p_jitter: "Forte deviation standard (plans instables).",
+    h2_temp: "8. Fichiers Temporaires (Spill to Disk)", p_temp: "Consommateurs de work_mem.",
+    h2_cache: "9. Cache Miss et Blocs Salis", p_cache: "Pression sur le buffer pool (RAM).",
+    h2_jit: "10. Surcharge JIT", h2_info: "11. Informations Globales et Sante",
+    "Requete (Cliquer)": "Requete (Cliquer)", "Appels": "Appels", "Total (ms)": "Total (ms)", "CPU Time (ms)": "CPU Time (ms)", "PCT CPU": "PCT CPU",
+    "Moyenne (ms)": "Moyenne (ms)", "IO Wait (ms)": "IO Wait (ms)", "PCT IO": "PCT IO", "Total Plan (ms)": "Total Plan (ms)",
+    "Moy Plan (ms)": "Moy Plan (ms)", "PCT Planning": "PCT Planning", "Total WAL": "Total WAL", "Bytes / Appel": "Bytes / Appel",
+    "WAL Records": "WAL Records", "PCT Charge": "PCT Charge", "Total Time (ms)": "Total Time (ms)", "Lignes Totales": "Lignes Totales",
+    "Ecart-Type (ms)": "Ecart-Type (ms)", "Ratio Var.": "Ratio Var.", "Blks Written": "Blks Written", "Total Temp Size": "Total Temp Size",
+    "Blks / Appel": "Blks / Appel", "Cache Hit PCT": "Cache Hit PCT", "Blocks Salis": "Blocks Salis", "JIT Overhead (ms)": "JIT Overhead (ms)",
+    "Deallocations": "Deallocations", "Dernier Reset": "Dernier Reset", "timestamp_prefix": "GÃ©nÃ©rÃ© le: ", "back_to_top": "Retour en haut",
+    "toggle_query": "COURT / LONG"
+  },
+  en: {
+    title: "PostgreSQL Performance Report",
+    nav_title: "Quick Navigation:",
+    nav_cpu: "1. Top CPU", nav_io: "2. Top IO", nav_plan: "3. Planning Time", nav_wal: "4. Top WAL", nav_freq: "5. Frequency",
+    nav_heavy: "6. Heavy Queries", nav_jitter: "7. Jitter", nav_temp: "8. Temp Files", nav_cache: "9. Cache Miss", nav_jit: "10. JIT", nav_info: "11. Info",
+    h2_cpu: "1. Top CPU Consumers (Excl. IO)", p_cpu: "Pure processor load (Total Time - IO Time).",
+    h2_io: "2. Top IO (Disk Latency)", p_io: "Disk wait (read/write).",
+    h2_plan: "3. Planning Time", p_plan: "Requires track_planning = on.",
+    h2_wal: "4. Top WAL Generators", p_wal: "Journal writes (checkpoint pressure).",
+    h2_freq: "5. High Frequency", p_freq: "Fast but massive query volume.",
+    h2_heavy: "6. Heavy Queries (Parallel Candidates)", p_heavy: "Longest absolute execution times.",
+    h2_jitter: "7. Instability (Jitter)", p_jitter: "High standard deviation (unstable plans).",
+    h2_temp: "8. Temp Files (Disk Spill)", p_temp: "Insufficient work_mem.",
+    h2_cache: "9. Cache Miss & Dirtied Blocks", p_cache: "Pressure on buffer pool (RAM).",
+    h2_jit: "10. JIT Overhead", h2_info: "11. Global Health",
+    "Requete (Cliquer)": "Query (Click)", "Appels": "Calls", "Total (ms)": "Total (ms)", "CPU Time (ms)": "CPU Time (ms)", "PCT CPU": "PCT CPU",
+    "Moyenne (ms)": "Average (ms)", "IO Wait (ms)": "IO Wait (ms)", "PCT IO": "PCT IO", "Total Plan (ms)": "Total Plan (ms)",
+    "Moy Plan (ms)": "Avg Plan (ms)", "PCT Planning": "PCT Planning", "Total WAL": "Total WAL", "Bytes / Appel": "Bytes / Call",
+    "WAL Records": "WAL Records", "PCT Charge": "PCT Load", "Total Time (ms)": "Total Time (ms)", "Lignes Totales": "Total Rows",
+    "Ecart-Type (ms)": "Stddev (ms)", "Ratio Var.": "Var. Ratio", "Blks Written": "Blks Written", "Total Temp Size": "Total Temp Size",
+    "Blks / Appel": "Blks / Call", "Cache Hit PCT": "Cache Hit PCT", "Blocks Salis": "Dirtied Blocks", "JIT Overhead (ms)": "JIT Overhead (ms)",
+    "Deallocations": "Deallocations", "Dernier Reset": "Last Reset", "timestamp_prefix": "Generated on: ", "back_to_top": "Back to Top",
+    "toggle_query": "SHORT / LONG"
+  }
+};
+
+let currentLang = "fr";
+
+function toggleQueries() {
+  const anyExpanded = !!document.querySelector('.query-content.expanded');
+  document.querySelectorAll('.query-content').forEach(el => {
+    if (anyExpanded) el.classList.remove('expanded');
+    else el.classList.add('expanded');
+  });
+}
+
+function toggleLanguage() {
+  currentLang = currentLang === "fr" ? "en" : "fr";
+  document.getElementById("lang-text").innerText = currentLang === "fr" ? "EN" : "FR";
+  updateUI();
+}
+
+function updateUI() {
+  document.querySelectorAll("[data-i18n]").forEach(el => {
+    const key = el.getAttribute("data-i18n");
+    if (translations[currentLang][key]) el.innerHTML = translations[currentLang][key];
+  });
+  const qBtn = document.getElementById('query-toggle-text');
+  if (qBtn) qBtn.innerText = translations[currentLang].toggle_query;
+}
+
+function toggleTheme() {
+  const body = document.body;
+  const icon = document.getElementById("theme-icon");
+  const text = document.getElementById("theme-text");
+  body.classList.toggle("light-mode");
+  const isLight = body.classList.contains("light-mode");
+  icon.innerHTML = isLight
+    ? "<svg class=\"icon\" viewBox=\"0 0 24 24\"><path d=\"M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z\"></path></svg>"
+    : "<svg class=\"icon\" viewBox=\"0 0 24 24\"><circle cx=\"12\" cy=\"12\" r=\"5\"></circle><line x1=\"12\" y1=\"1\" x2=\"12\" y2=\"3\"></line><line x1=\"12\" y1=\"21\" x2=\"12\" y2=\"23\"></line><line x1=\"4.22\" y1=\"4.22\" x2=\"5.64\" y2=\"5.64\"></line><line x1=\"18.36\" y1=\"18.36\" x2=\"19.78\" y2=\"19.78\"></line><line x1=\"1\" y1=\"12\" x2=\"3\" y2=\"12\"></line><line x1=\"21\" y1=\"12\" x2=\"23\" y2=\"12\"></line><line x1=\"4.22\" y1=\"19.78\" x2=\"5.64\" y2=\"18.36\"></line><line x1=\"18.36\" y1=\"5.64\" x2=\"19.78\" y2=\"4.22\"></line></svg>";
+  text.innerText = isLight ? (currentLang === "fr" ? "Mode Sombre" : "Dark Mode") : (currentLang === "fr" ? "Mode Clair" : "Light Mode");
+}
+
+function scrollToTop() {
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+window.onscroll = function() {
+  const btn = document.getElementById("backToTop");
+  const scrollPos = window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0;
+  if (scrollPos > 500) {
+    btn.style.display = "flex";
+  } else {
+    btn.style.display = "none";
+  }
+};
+
+function copyToClipboard(event, text, btn) {
+    event.stopPropagation();
+    navigator.clipboard.writeText(text).then(() => {
+        const originalHTML = btn.innerHTML;
+        btn.classList.add('copied');
+        btn.innerHTML = '<svg class="icon" viewBox="0 0 24 24" style="stroke: white;"><path d="M20 6L9 17l-5-5"></path></svg>';
+        setTimeout(() => {
+            btn.classList.remove('copied');
+            btn.innerHTML = originalHTML;
+        }, 2000);
+    });
+}
+
+document.addEventListener("DOMContentLoaded", function() {
+    var cells = document.querySelectorAll("td:first-child");
+    cells.forEach(function(cell) {
+        var rawContent = cell.innerHTML;
+        var plainText = cell.innerText;
+        
+        // Use standard concatenation to avoid psql backtick stripping issues
+        var html = '<div class="query-wrapper">';
+        html += '<div class="query-content">' + rawContent + '</div>';
+        
+        // Escape quotes for the onclick handler
+        var escapedText = plainText.replace(/'/g, "\\'").replace(/"/g, '&quot;').replace(/\n/g, ' ');
+        html += '<button class="copy-btn" onclick="copyToClipboard(event, \'' + escapedText + '\', this)" title="Copy to clipboard">';
+        html += '<svg class="icon" viewBox="0 0 24 24"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect></svg>';
+        html += '</button></div>';
+        
+        cell.innerHTML = html;
+        
+        cell.title = currentLang === "fr" ? "Cliquez pour voir la requ&ecirc;te compl&egrave;te" : "Click to see full query";
+        cell.addEventListener("click", function() {
+            var content = this.querySelector(".query-content");
+            if (content) content.classList.toggle("expanded");
+        });
+    });
+    updateUI();
+});
+
+// Override updateUI to also translate table headers generated by psql
+const originalUpdateUI = updateUI;
+updateUI = function() {
+  originalUpdateUI();
+  document.querySelectorAll("th").forEach(th => {
+    const text = th.innerText.trim();
+    if (translations[currentLang][text]) {
+      th.innerHTML = translations[currentLang][text];
+    }
+  });
+};
+
+</script>
+<div class="timestamp">
+<span data-i18n="timestamp_prefix">G&eacute;n&eacute;r&eacute; le : </span>
+2026-10-23 20:45:16
+</div>
+</body>
+</html>
